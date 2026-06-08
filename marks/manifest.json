@@ -1,0 +1,27 @@
+{
+  "name": "SmartScan Marks App",
+  "short_name": "SmartScan",
+  "description": "An OCR-powered application to scan student mark sheets, extract Student IDs and Marks, and export them to a CSV file.",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#4f46e5",
+  "background_color": "#f3f4f6"
+}

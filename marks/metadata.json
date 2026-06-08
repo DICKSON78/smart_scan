@@ -1,0 +1,12 @@
+{
+  "name": "SmartScan Marks App.OG",
+  "description": "A professional OCR-powered application for academic staff to scan mark sheets and assignments. Features dual OCR engines (Gemini AI & ML Kit), specialized recognition for marks at the top of pages, group-to-individual mapping, session management, and export to CSV/Excel. Designed for high-accuracy extraction of Student IDs and Names from handwritten or printed text.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "prompt": ""
+}
