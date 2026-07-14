@@ -1,185 +1,252 @@
-// ignore_for_file: use_null_aware_elements
-
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../config/api_config.dart';
-
-class ApiException implements Exception {
-  final String message;
-  final int statusCode;
-  ApiException(this.message, this.statusCode);
-  @override
-  String toString() => message;
-}
+import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._();
   factory ApiService() => _instance;
   ApiService._();
 
-  final _client = http.Client();
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        if (ApiConfig.authToken != null)
-          'Authorization': 'Bearer ${ApiConfig.authToken}',
-      };
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
-  String _url(String path) => '${ApiConfig.baseUrl}$path';
+  Map<String, dynamic> _docToMap(DocumentSnapshot doc) =>
+      {'id': doc.id, ...doc.data() as Map<String, dynamic>};
 
-  Future<Map<String, dynamic>> _request(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    Map<String, String>? queryParams,
-  }) async {
-    final uri = Uri.parse(_url(path)).replace(queryParameters: queryParams);
-    http.Response response;
-
-    switch (method) {
-      case 'GET':
-        response = await _client.get(uri, headers: _headers);
-        break;
-      case 'POST':
-        response = await _client.post(uri, headers: _headers, body: body != null ? jsonEncode(body) : null);
-        break;
-      case 'DELETE':
-        response = await _client.delete(uri, headers: _headers);
-        break;
-      default:
-        throw ApiException('Unsupported method: $method', 400);
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-    if (response.statusCode >= 400) {
-      throw ApiException(
-        data['error']?.toString() ?? 'Request failed',
-        response.statusCode,
-      );
-    }
-
-    return data;
-  }
-
-  // ---- Auth ----
-  Future<Map<String, dynamic>> signup(String email, String password, String name) async {
-    final data = await _request('POST', ApiConfig.signup, body: {
-      'email': email,
-      'password': password,
-      'name': name,
-    });
-    ApiConfig.authToken = data['token'] as String?;
-    return data;
-  }
-
-  Future<Map<String, dynamic>> signin(String email, String password) async {
-    final data = await _request('POST', ApiConfig.signin, body: {
-      'email': email,
-      'password': password,
-    });
-    ApiConfig.authToken = data['token'] as String?;
-    return data;
-  }
-
-  Future<Map<String, dynamic>> inviteLogin(String code, String name) async {
-    final data = await _request('POST', ApiConfig.inviteLogin, body: {
-      'code': code,
-      'name': name,
-    });
-    ApiConfig.authToken = data['token'] as String?;
-    return data;
-  }
-
-  Future<Map<String, dynamic>> getProfile() async {
-    return _request('GET', ApiConfig.profile);
-  }
-
-  // ---- Courses ----
-  Future<Map<String, dynamic>> listCourses() async {
-    return _request('GET', ApiConfig.courses);
-  }
-
-  Future<Map<String, dynamic>> createCourse(String code, String name) async {
-    return _request('POST', ApiConfig.courses, body: {
-      'code': code,
-      'name': name,
-    });
-  }
-
-  Future<Map<String, dynamic>> deleteCourse(int id) async {
-    return _request('DELETE', '/courses/$id');
-  }
-
-  // ---- Credits (deduct without storing marks) ----
   Future<Map<String, dynamic>> deductCredits({int count = 1}) async {
-    return _request('POST', ApiConfig.creditsDeduct, body: {
-      'count': count,
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    await _db.collection('users').doc(uid).update({
+      'credits': FieldValue.increment(-count),
     });
+    return {'success': true};
   }
 
-  // ---- Team ----
-  Future<Map<String, dynamic>> teamMembers() async {
-    return _request('GET', ApiConfig.teamMembers);
-  }
-
-  Future<Map<String, dynamic>> teamInvite() async {
-    return _request('POST', ApiConfig.teamInvite);
-  }
-
-  Future<Map<String, dynamic>> removeTeamMember(int teacherId) async {
-    return _request('DELETE', '/team/members/$teacherId');
-  }
-
-  Future<Map<String, dynamic>> teamAllocate(int teacherId, int credits) async {
-    return _request('POST', ApiConfig.teamAllocate, body: {
-      'teacherId': teacherId,
-      'credits': credits,
-    });
-  }
-
-  Future<Map<String, dynamic>> teamUsage() async {
-    return _request('GET', ApiConfig.teamUsage);
-  }
-
-  // ---- Credits ----
   Future<Map<String, dynamic>> getCreditsBalance() async {
-    return _request('GET', ApiConfig.creditsBalance);
-  }
-
-  Future<Map<String, dynamic>> topupCredits({int? amount, String? package}) async {
-    return _request('POST', ApiConfig.creditsTopup, body: {
-      if (amount != null) 'amount': amount,
-      if (package != null) 'package': package,
-    });
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final doc = await _db.collection('users').doc(uid).get();
+    if (!doc.exists) throw Exception('User not found');
+    final user = doc.data()!;
+    if (user['parentAdminId'] != null) {
+      final adminDoc = await _db.collection('users').doc(user['parentAdminId'] as String).get();
+      return {'success': true, 'credits': (adminDoc.data()?['credits'] as num?)?.toInt() ?? 0};
+    }
+    return {'success': true, 'credits': (user['credits'] as num?)?.toInt() ?? 0};
   }
 
   Future<Map<String, dynamic>> getMyUsage() async {
-    return _request('GET', ApiConfig.creditsMyUsage);
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final doc = await _db.collection('users').doc(uid).get();
+    if (!doc.exists) throw Exception('User not found');
+    final user = doc.data()!;
+    if (user['isAdmin'] == true || user['parentAdminId'] == null) {
+      return {'success': true, 'isTeacher': false, 'creditsRemaining': (user['credits'] as num?)?.toInt() ?? 0};
+    }
+    final alloc = await _db.collection('teachers')
+      .where('userId', isEqualTo: uid)
+      .where('adminId', isEqualTo: user['parentAdminId'])
+      .limit(1)
+      .get();
+    if (alloc.docs.isEmpty) {
+      return {'success': true, 'isTeacher': true, 'allocatedCredits': 0, 'usedCredits': 0};
+    }
+    final d = alloc.docs.first.data();
+    return {
+      'success': true, 'isTeacher': true,
+      'allocatedCredits': (d['allocatedCredits'] as num?)?.toInt() ?? 0,
+      'usedCredits': (d['usedCredits'] as num?)?.toInt() ?? 0,
+    };
   }
 
-  // ---- Subscription ----
-  Future<Map<String, dynamic>> listPlans() async {
-    return _request('GET', ApiConfig.subscriptionPlans);
-  }
+  Future<Map<String, dynamic>> joinTeam(String code) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final codeSnap = await _db.collection('invite_codes').doc(code.toUpperCase()).get();
+    if (!codeSnap.exists) throw Exception('Invalid invite code');
+    final invite = codeSnap.data()!;
+    if (invite['usedBy'] != null) throw Exception('Invite code has already been used');
 
-  Future<Map<String, dynamic>> subscriptionStatus() async {
-    return _request('GET', ApiConfig.subscriptionStatus);
-  }
+    final adminDoc = await _db.collection('users').doc(invite['adminId'] as String).get();
+    if (!adminDoc.exists) throw Exception('Admin not found');
+    final admin = adminDoc.data()!;
+    final creditsToAdd = (invite['credits'] as num?)?.toInt() ?? 500;
 
-  Future<Map<String, dynamic>> purchasePlan(String planId) async {
-    return _request('POST', ApiConfig.subscriptionPurchase, body: {
-      'planId': planId,
+    await _db.runTransaction((tx) async {
+      tx.update(_db.collection('users').doc(uid), {
+        'isAdmin': false,
+        'parentAdminId': invite['adminId'],
+        'subscriptionPlan': invite['plan'],
+        'credits': FieldValue.increment(creditsToAdd),
+        'institutionName': admin['institutionName'] ?? '',
+      });
+      tx.update(_db.collection('invite_codes').doc(code.toUpperCase()), {
+        'usedBy': uid,
+        'usedAt': FieldValue.serverTimestamp(),
+      });
     });
+
+    return {
+      'success': true,
+      'plan': invite['plan'],
+      'credits': creditsToAdd,
+      'institutionName': admin['institutionName'] ?? '',
+    };
   }
 
-  // ---- Logout ----
-  Future<Map<String, dynamic>> logout() async {
-    return _request('POST', ApiConfig.logout);
+  Future<Map<String, dynamic>> generateInviteCode({String plan = 'starter', int? credits}) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final code = List.generate(6, (_) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      return chars[Random.secure().nextInt(chars.length)];
+    }).join();
+
+    await _db.collection('invite_codes').doc(code).set({
+      'code': code,
+      'adminId': uid,
+      'plan': plan,
+      'credits': credits ?? 500,
+      'usedBy': null,
+      'usedAt': null,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    return {'success': true, 'code': code};
   }
 
-  // ---- Setup ----
-  Future<Map<String, dynamic>> runSetup() async {
-    return _request('GET', ApiConfig.setup);
+  Future<Map<String, dynamic>> getSubscriptionStatus() async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final userDoc = await _db.collection('users').doc(uid).get();
+    if (!userDoc.exists) throw Exception('User not found');
+    final user = userDoc.data()!;
+
+    if (user['parentAdminId'] != null) {
+      final adminDoc = await _db.collection('users').doc(user['parentAdminId'] as String).get();
+      final admin = adminDoc.data()!;
+      final inviteSnap = await _db.collection('invite_codes')
+        .where('usedBy', isEqualTo: uid)
+        .limit(1)
+        .get();
+      final invite = inviteSnap.docs.isEmpty ? null : inviteSnap.docs.first.data();
+      final teachersSnap = await _db.collection('users')
+        .where('parentAdminId', isEqualTo: user['parentAdminId'])
+        .get();
+
+      return {
+        'success': true,
+        'subscription': {
+          'planId': admin['subscriptionPlan'] ?? 'basic',
+          'inviteCode': invite?['code'],
+          'institutionName': admin['institutionName'] ?? '',
+          'defaultInviteCredits': 500,
+          'teachers': teachersSnap.docs.map((d) {
+            final t = d.data();
+            return {'email': t['email'], 'name': t['name'], 'credits': t['credits'], 'createdAt': 0};
+          }).toList(),
+        },
+      };
+    }
+
+    final teachersSnap = await _db.collection('users')
+      .where('parentAdminId', isEqualTo: uid)
+      .get();
+    final inviteSnap = await _db.collection('invite_codes')
+      .where('adminId', isEqualTo: uid)
+      .where('usedBy', isEqualTo: null)
+      .limit(1)
+      .get();
+    final invite = inviteSnap.docs.isEmpty ? null : inviteSnap.docs.first.data();
+
+    return {
+      'success': true,
+      'subscription': {
+        'planId': user['subscriptionPlan'] ?? 'basic',
+        'inviteCode': invite?['code'],
+        'institutionName': user['institutionName'] ?? '',
+        'defaultInviteCredits': 500,
+        'teachers': teachersSnap.docs.map((d) {
+          final t = d.data();
+          return {'email': t['email'], 'name': t['name'], 'credits': t['credits'], 'createdAt': 0};
+        }).toList(),
+      },
+    };
+  }
+
+  Future<Map<String, dynamic>> updateProfile({String? name, String? institutionName}) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final update = <String, dynamic>{};
+    if (name != null) update['name'] = name;
+    if (institutionName != null) {
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.data()?['isAdmin'] != true) throw Exception('Only admins can change institution name');
+      update['institutionName'] = institutionName;
+    }
+    if (update.isNotEmpty) await _db.collection('users').doc(uid).update(update);
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> listCourses() async {
+    final snap = await _db.collection('courses').orderBy('code').get();
+    return {'success': true, 'courses': snap.docs.map((d) => _docToMap(d)).toList()};
+  }
+
+  Future<Map<String, dynamic>> createCourse(String code, String name) async {
+    final ref = await _db.collection('courses').add({
+      'code': code.toUpperCase(),
+      'name': name,
+      'createdBy': _uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return {'success': true, 'id': ref.id};
+  }
+
+  Future<Map<String, dynamic>> listSessions() async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final snap = await _db.collection('sessions')
+      .where('userId', isEqualTo: uid)
+      .orderBy('createdAt', descending: true)
+      .get();
+    return {'success': true, 'sessions': snap.docs.map((d) => _docToMap(d)).toList()};
+  }
+
+  Future<Map<String, dynamic>> createSession({required String name, String subject = 'General', String courseCode = '', int maxMark = 100, String extractionType = 'Exam'}) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final ref = await _db.collection('sessions').add({
+      'name': name,
+      'subject': subject,
+      'courseCode': courseCode,
+      'maxMark': maxMark,
+      'extractionType': extractionType,
+      'userId': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return {'success': true, 'id': ref.id};
+  }
+
+  Future<Map<String, dynamic>> deleteSession(String sessionId) async {
+    await _db.collection('sessions').doc(sessionId).delete();
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> addCredits(int count) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final doc = await _db.collection('users').doc(uid).get();
+    if (doc.data()?['isAdmin'] != true) throw Exception('Only admins can add credits');
+    await _db.collection('users').doc(uid).update({'credits': FieldValue.increment(count)});
+    return {'success': true, 'creditsAdded': count};
+  }
+
+  Future<Map<String, dynamic>> getUserByEmail(String email) async {
+    final snap = await _db.collection('users').where('email', isEqualTo: email).limit(1).get();
+    if (snap.docs.isEmpty) return {'success': false, 'user': null};
+    return {'success': true, 'user': _docToMap(snap.docs.first)};
   }
 }

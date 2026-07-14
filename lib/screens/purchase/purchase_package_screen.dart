@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../providers/subscription_provider.dart';
+import '../../config/api_config.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../services/clickpesa_service.dart';
 import '../../utils/theme.dart';
+import '../../widgets/error_dialog.dart';
 
 class _PricingPlan {
   final String title;
   final String price;
+  final int priceAmount;
   final String scans;
   final String devices;
   final String description;
@@ -20,6 +24,7 @@ class _PricingPlan {
   const _PricingPlan({
     required this.title,
     required this.price,
+    required this.priceAmount,
     required this.scans,
     required this.devices,
     required this.description,
@@ -35,6 +40,7 @@ const _plans = [
   _PricingPlan(
     title: 'Starter',
     price: 'Tshs 25,000',
+    priceAmount: 25000,
     scans: '1,000 Scans',
     devices: 'Up to 2 Devices',
     description: 'Perfect for individual lecturers',
@@ -43,44 +49,51 @@ const _plans = [
   _PricingPlan(
     title: 'Standard',
     price: 'Tshs 100,000',
+    priceAmount: 100000,
     scans: '5,000 Scans',
     devices: 'Up to 5 Devices',
     description: 'Active lecturers with multiple courses',
     scanAmount: 5000,
   ),
   _PricingPlan(
-    title: 'School',
-    price: 'Tshs 180,000',
-    scans: '10,000 Scans',
-    devices: 'Up to 20 Devices',
-    description: 'Small schools and departments',
-    isPopular: true,
-    badgeLabel: 'POPULAR',
-    isHighlighted: true,
-    scanAmount: 10000,
-  ),
-  _PricingPlan(
     title: 'Institution',
     price: 'Tshs 800,000',
+    priceAmount: 800000,
     scans: '50,000 Scans',
     devices: 'Up to 100 Devices',
     description: 'Universities and colleges',
     isBestValue: true,
     badgeLabel: 'BEST VALUE',
+    isHighlighted: true,
     scanAmount: 50000,
   ),
   _PricingPlan(
     title: 'Unlimited',
     price: 'Tshs 1,300,000',
-    scans: 'Unlimited Scans',
+    priceAmount: 1300000,
+    scans: '200,000 Scans',
     devices: 'Up to 200 Devices',
-    description: 'Large multi-faculty institutions — 1 year unlimited',
-    scanAmount: 999999,
+    description: 'Large multi-faculty institutions',
+    scanAmount: 200000,
   ),
 ];
 
-class PurchasePackageScreen extends StatelessWidget {
+class PurchasePackageScreen extends StatefulWidget {
   const PurchasePackageScreen({super.key});
+
+  @override
+  State<PurchasePackageScreen> createState() => _PurchasePackageScreenState();
+}
+
+class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
+  final ClickPesaService _clickPesa = ClickPesaService();
+  bool _isPaying = false;
+
+  @override
+  void dispose() {
+    _clickPesa.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +114,12 @@ class PurchasePackageScreen extends StatelessWidget {
               const SizedBox(height: 28),
               ..._plans.map((plan) => Padding(
                 padding: const EdgeInsets.only(bottom: 20),
-                child: _PricingCard(plan: plan, sp: sp),
+                child: _PricingCard(
+                  plan: plan,
+                  sp: sp,
+                  onBuy: () => _onBuy(context, plan),
+                  isPaying: _isPaying,
+                ),
               )),
               const SizedBox(height: 8),
               _buildCurrentPlanNote(sp),
@@ -190,13 +208,528 @@ class PurchasePackageScreen extends StatelessWidget {
       ),
     );
   }
+
+  void _onBuy(BuildContext context, _PricingPlan plan) {
+    _showPaymentSheet(context, plan);
+  }
+
+  void _showPaymentSheet(BuildContext context, _PricingPlan plan) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: EduColors.cardBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Select Payment Method',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: EduColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${plan.title} - ${plan.price}',
+              style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _doMobilePayment(context, plan);
+                },
+                icon: const Icon(Icons.phone_android),
+                label: Text(
+                  'Mobile Money',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: EduColors.royalBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showCardPaymentDialog(context, plan);
+                },
+                icon: const Icon(Icons.credit_card),
+                label: Text(
+                  'Card / Visa / Mastercard',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: EduColors.royalBlue,
+                  side: const BorderSide(color: EduColors.royalBlue),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: EduColors.textLight),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCardPaymentDialog(BuildContext context, _PricingPlan plan) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: EduColors.royalBlueLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.credit_card, size: 32, color: EduColors.royalBlue),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Card Payment (Coming Soon)',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Card payments will be available soon. Please use Mobile Money for now.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _doMobilePayment(context, plan);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: EduColors.royalBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  ),
+                  child: Text(
+                    'Use Mobile Money Instead',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _doMobilePayment(BuildContext context, _PricingPlan plan) async {
+    final phoneCtrl = TextEditingController();
+    final confirmed = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: EduColors.royalBlueLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.phone_android, size: 32, color: EduColors.royalBlue),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Mobile Payment',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${plan.title} - ${plan.price}',
+                style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: 'e.g. 0789 123 456',
+                  prefixIcon: const Icon(Icons.phone, color: EduColors.royalBlue),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final phone = phoneCtrl.text.trim();
+                    if (phone.isEmpty) return;
+                    Navigator.pop(ctx, phone);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: EduColors.royalBlue,
+                    foregroundColor: Colors.white,
+                    overlayColor: EduColors.white.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  ),
+                  child: Text(
+                    'Pay Now',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed == null || confirmed.isEmpty) return;
+
+    await _processPayment(context, plan, confirmed);
+  }
+
+  Future<void> _processPayment(BuildContext context, _PricingPlan plan, String phone) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = context.read<AuthProvider>();
+    final sp = context.read<SubscriptionProvider>();
+
+    setState(() => _isPaying = true);
+
+    try {
+      // 1. Initiate payment
+      final result = await _clickPesa.initiateUSSDPush(
+        uid: auth.user?.id ?? '',
+        planId: plan.title.toLowerCase(),
+        amount: plan.priceAmount,
+        scans: plan.scanAmount,
+        phone: phone,
+      );
+
+      if (!result.success || result.orderReference == null) {
+        final errorMsg = result.error ?? 'Failed to initiate payment';
+        if (mounted) {
+          showErrorDialog(context, ErrorDialogConfig(
+            title: 'Payment Failed',
+            message: _friendlyPaymentError(errorMsg),
+            actionLabel: 'Try Again',
+            onAction: () => _showPaymentSheet(context, plan),
+            secondaryLabel: 'Cancel',
+            type: ErrorDialogType.error,
+          ));
+        }
+        return;
+      }
+
+      // 2. Show waiting dialog and poll ClickPesa for status
+      if (!mounted) return;
+      final paymentOk = await _showPaymentWaitingDialog(
+        context,
+        orderRef: result.orderReference!,
+        plan: plan,
+      );
+
+      if (paymentOk) {
+        // 3. Payment confirmed — _clickPesa.pollForPayment already credited Firestore
+        // Refresh from Firestore and update local state
+        await auth.refreshCredits();
+        sp.selectPlan(plan.title.toLowerCase());
+
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Payment successful! ${plan.title} activated. ${_formatScans(plan.scanAmount)} scans added.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: EduColors.success,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorDialog(context, ErrorDialogConfig(
+          title: 'Payment Error',
+          message: 'We could not process your payment. Please check your internet connection and try again.',
+          actionLabel: 'Try Again',
+          onAction: () => _showPaymentSheet(context, plan),
+          secondaryLabel: 'Cancel',
+          type: ErrorDialogType.error,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isPaying = false);
+    }
+  }
+
+  String _friendlyPaymentError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('network')) return 'Unable to connect. Please check your internet connection and try again.';
+    if (lower.contains('token') || lower.contains('auth')) return 'Payment service temporarily unavailable. Please try again later.';
+    if (lower.contains('invalid phone') || lower.contains('phone')) return 'Please enter a valid phone number.';
+    if (lower.contains('minimum')) return raw;
+    return 'Something went wrong. Please try again.';
+  }
+
+  Future<bool> _showPaymentWaitingDialog(
+    BuildContext context, {
+    required String orderRef,
+    required _PricingPlan plan,
+  }) async {
+    // ignore: use_build_context_synchronously
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _PaymentWaitingDialog(
+        orderRef: orderRef,
+        planName: plan.title,
+        amount: plan.price,
+        clickPesa: _clickPesa,
+      ),
+    ).then((result) => result ?? false);
+  }
+
+  String _formatScans(int amount) {
+    if (amount >= 999999) return 'Unlimited';
+    if (amount >= 1000) return '${(amount / 1000).toStringAsFixed(0)},000';
+    return amount.toString();
+  }
 }
+
+// ---------- Payment Waiting Dialog ----------
+
+class _PaymentWaitingDialog extends StatefulWidget {
+  final String orderRef;
+  final String planName;
+  final String amount;
+  final ClickPesaService clickPesa;
+
+  const _PaymentWaitingDialog({
+    required this.orderRef,
+    required this.planName,
+    required this.amount,
+    required this.clickPesa,
+  });
+
+  @override
+  State<_PaymentWaitingDialog> createState() => _PaymentWaitingDialogState();
+}
+
+class _PaymentWaitingDialogState extends State<_PaymentWaitingDialog> {
+  bool _isPolling = true;
+  bool _success = false;
+  String _statusMessage = 'Waiting for payment...';
+
+  @override
+  void initState() {
+    super.initState();
+    _startPolling();
+  }
+
+  Future<void> _startPolling() async {
+    final ok = await widget.clickPesa.pollForPayment(widget.orderRef);
+
+    if (!mounted) return;
+
+    if (ok) {
+      setState(() {
+        _success = true;
+        _isPolling = false;
+        _statusMessage = 'Payment confirmed!';
+      });
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) Navigator.pop(context, true);
+    } else {
+      setState(() {
+        _isPolling = false;
+        _statusMessage = 'Payment timed out or failed. Please try again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isPolling) ...[
+              const SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Processing Payment',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: EduColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${widget.planName} - ${widget.amount}',
+                style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _statusMessage,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Enter your PIN when prompted',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: EduColors.textLight,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ] else if (_success) ...[
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: EduColors.successLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check, size: 32, color: EduColors.success),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Payment Successful!',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: EduColors.success,
+                ),
+              ),
+            ] else ...[
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: EduColors.errorLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 32, color: EduColors.error),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Payment Failed',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: EduColors.error,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _statusMessage,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: EduColors.royalBlue,
+                    foregroundColor: Colors.white,
+                    overlayColor: EduColors.white.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  ),
+                  child: Text('Close', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- Pricing Card ----------
 
 class _PricingCard extends StatelessWidget {
   final _PricingPlan plan;
   final SubscriptionProvider sp;
+  final VoidCallback onBuy;
+  final bool isPaying;
 
-  const _PricingCard({required this.plan, required this.sp});
+  const _PricingCard({
+    required this.plan,
+    required this.sp,
+    required this.onBuy,
+    required this.isPaying,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -344,9 +877,7 @@ class _PricingCard extends StatelessWidget {
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
-        onPressed: isActive
-            ? null
-            : () => _onBuy(context),
+        onPressed: (isActive || isPaying) ? null : onBuy,
         style: ElevatedButton.styleFrom(
           backgroundColor: isActive
               ? EduColors.cardBorder
@@ -356,13 +887,18 @@ class _PricingCard extends StatelessWidget {
           foregroundColor: isActive ? EduColors.textLight : EduColors.white,
           disabledBackgroundColor: EduColors.cardBorder,
           disabledForegroundColor: EduColors.textLight,
+          overlayColor: EduColors.white.withValues(alpha: 0.1),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(25),
           ),
           elevation: 0,
         ),
         child: Text(
-          isActive ? 'Current Plan' : 'Activate',
+          isPaying
+              ? 'Processing...'
+              : isActive
+                  ? 'Current Plan'
+                  : 'Activate',
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.w600,
             fontSize: 15,
@@ -370,215 +906,6 @@ class _PricingCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _onBuy(BuildContext context) {
-    _showPaymentSheet(context);
-  }
-
-  void _showPaymentSheet(BuildContext context) {
-    final planKey = plan.title.toLowerCase();
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: EduColors.cardBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Select Payment Method',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: EduColors.textDark,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${plan.title} - ${plan.price}',
-              style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _completePurchase(context, planKey, 'bank');
-                },
-                icon: const Icon(Icons.account_balance),
-                label: Text(
-                  'Bank Card Payment',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: EduColors.royalBlue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _showMobilePaymentDialog(context, planKey);
-                },
-                icon: const Icon(Icons.phone_android),
-                label: Text(
-                  'Mobile Payment',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EduColors.royalBlue,
-                  side: const BorderSide(color: EduColors.royalBlue),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.poppins(color: EduColors.textLight),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showMobilePaymentDialog(BuildContext context, String planKey) {
-    final phoneCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: EduColors.royalBlueLight,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.phone_android, size: 32, color: EduColors.royalBlue),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Mobile Payment',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${plan.title} - ${plan.price}',
-                style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: 'e.g. 0789 123 456',
-                  prefixIcon: const Icon(Icons.phone, color: EduColors.royalBlue),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final phone = phoneCtrl.text.trim();
-                    if (phone.isEmpty) return;
-                    Navigator.pop(ctx);
-                    _completePurchase(context, planKey, 'mobile');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: EduColors.royalBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                  ),
-                  child: Text(
-                    'Subscribe Now',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _completePurchase(BuildContext context, String planKey, String method) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final sp = context.read<SubscriptionProvider>();
-    final auth = context.read<AuthProvider>();
-
-    try {
-      sp.selectPlan(planKey);
-      await auth.addCredits(plan.scanAmount);
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '${plan.title} activated! ${_formatScans(plan.scanAmount)} scans added.',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: EduColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Purchase failed: $e', style: GoogleFonts.poppins()),
-            backgroundColor: EduColors.error,
-          ),
-        );
-      }
-    }
-  }
-
-  String _formatScans(int amount) {
-    if (amount >= 999999) return 'Unlimited';
-    if (amount >= 1000) return '${(amount / 1000).toStringAsFixed(0)},000';
-    return amount.toString();
   }
 }
 

@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/api_config.dart';
 import '../services/api_service.dart';
 
 class UniversityCourse {
@@ -15,7 +13,7 @@ class UniversityCourse {
   Map<String, dynamic> toJson() => {'code': code, 'name': name};
 
   factory UniversityCourse.fromJson(Map<String, dynamic> json) =>
-      UniversityCourse(code: json['code'], name: json['name']);
+      UniversityCourse(code: json['code'] as String? ?? '', name: json['name'] as String? ?? '');
 }
 
 class CourseProvider with ChangeNotifier {
@@ -24,42 +22,68 @@ class CourseProvider with ChangeNotifier {
 
   List<UniversityCourse> get courses => _courses;
   String get currentCourse => _currentCourse;
-  List<String> get courseDisplays =>
-      _courses.map((c) => c.display).toList();
+  List<String> get courseDisplays => _courses.map((c) => c.display).toList();
 
-  CourseProvider();
-
-  void setCurrentCourse(String course) {
-    _currentCourse = course;
-    notifyListeners();
+  CourseProvider() {
+    _load();
   }
 
-  void addCourse(String code, String name) {
-    final existing =
-        _courses.where((c) => c.code.toUpperCase() == code.toUpperCase());
-    if (existing.isNotEmpty) return;
-    _courses.add(UniversityCourse(code: code.toUpperCase(), name: name));
-    _saveCourses();
-    if (ApiConfig.useApi) {
-      unawaited(ApiService().createCourse(code, name).catchError((_) => <String, dynamic>{}));
-    }
-    notifyListeners();
-  }
+  Future<void> _load() async {
+    try {
+      final res = await ApiService().listCourses();
+      if (res['success'] == true && res['courses'] is List) {
+        _courses.clear();
+        for (final c in res['courses'] as List) {
+          final data = c as Map<String, dynamic>;
+          _courses.add(UniversityCourse(code: data['code'] as String? ?? '', name: data['name'] as String? ?? ''));
+        }
+        notifyListeners();
+        return;
+      }
+    } catch (_) {}
 
-  void removeCourse(int index) {
-    if (index >= 0 && index < _courses.length) {
-      _courses.removeAt(index);
-      _saveCourses();
-      if (ApiConfig.useApi) {
-        unawaited(ApiService().deleteCourse(index + 1).catchError((_) => <String, dynamic>{}));
+    // Fallback: load from local storage
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString('courses');
+    if (stored != null) {
+      final list = stored.split(',').where((s) => s.isNotEmpty);
+      _courses.clear();
+      for (final entry in list) {
+        final parts = entry.split('|');
+        if (parts.length == 2) _courses.add(UniversityCourse(code: parts[0], name: parts[1]));
       }
       notifyListeners();
     }
   }
 
-  Future<void> _saveCourses() async {
+  Future<bool> addCourse(String code, String name) async {
+    try {
+      final res = await ApiService().createCourse(code, name);
+      if (res['success'] == true) {
+        _courses.add(UniversityCourse(code: code.toUpperCase(), name: name));
+        notifyListeners();
+        await _saveLocal();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  void removeCourse(int index) {
+    if (index < 0 || index >= _courses.length) return;
+    _courses.removeAt(index);
+    notifyListeners();
+    _saveLocal();
+  }
+
+  void setCurrentCourse(String code) {
+    _currentCourse = code;
+    notifyListeners();
+  }
+
+  Future<void> _saveLocal() async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonStr = json.encode(_courses.map((c) => c.toJson()).toList());
-    await prefs.setString('university_courses', jsonStr);
+    final data = _courses.map((c) => '${c.code}|${c.name}').join(',');
+    await prefs.setString('courses', data);
   }
 }

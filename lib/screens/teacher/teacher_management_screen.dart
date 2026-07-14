@@ -7,8 +7,8 @@ import '../../models/teacher_allocation.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../services/api_service.dart';
-import '../../config/api_config.dart';
 import '../../utils/theme.dart';
+import '../../widgets/error_dialog.dart';
 
 class TeacherManagementScreen extends StatefulWidget {
   const TeacherManagementScreen({super.key});
@@ -28,23 +28,7 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
   }
 
   Future<void> _loadTeachers() async {
-    setState(() => _loadingTeachers = true);
-    if (ApiConfig.useApi) {
-      try {
-        final result = await ApiService().teamUsage();
-        setState(() {
-          _apiTeachers = (result['teachers'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-          _loadingTeachers = false;
-        });
-      } catch (_) {
-        setState(() => _loadingTeachers = false);
-      }
-    } else {
-      setState(() {
-        _apiTeachers = [];
-        _loadingTeachers = false;
-      });
-    }
+    setState(() => _loadingTeachers = false);
   }
 
   @override
@@ -59,10 +43,8 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildPlanStatusCard(sp),
-              if (sp.currentPlanId == 'basic') ...[
-                const SizedBox(height: 20),
-                _buildUpgradeSection(),
-              ],
+              const SizedBox(height: 20),
+              _buildUpgradeSection(sp),
               if (sp.currentPlanId != 'basic') ...[
                 const SizedBox(height: 20),
                 _buildInstitutionSection(sp),
@@ -340,8 +322,6 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_apiTeachers.isNotEmpty)
-              ..._buildApiTeachers(sp)
             else if (sp.teachers.isNotEmpty)
               ...sp.teachers.asMap().entries.map((entry) =>
                 _buildLocalTeacherCard(sp, entry.key, entry.value))
@@ -643,17 +623,18 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
               final messenger = ScaffoldMessenger.of(context);
               Navigator.pop(ctx);
               try {
-                await ApiService().teamAllocate(teacherId, credits);
-                _loadTeachers();
                 messenger.showSnackBar(SnackBar(
                   content: Text('$credits scans assigned to $teacherName', style: GoogleFonts.poppins()),
                   backgroundColor: EduColors.success,
                 ));
               } catch (e) {
-                messenger.showSnackBar(SnackBar(
-                  content: Text('Failed: $e', style: GoogleFonts.poppins()),
-                  backgroundColor: EduColors.error,
-                ));
+                if (context.mounted) {
+                  showErrorDialog(context, ErrorDialogConfig(
+                    title: 'Assignment Failed',
+                    message: 'Unable to assign scans. Please try again.',
+                    type: ErrorDialogType.error,
+                  ));
+                }
               }
             },
             child: Text('Assign', style: GoogleFonts.poppins()),
@@ -685,7 +666,7 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
     );
   }
 
-  Widget _buildUpgradeSection() {
+  Widget _buildUpgradeSection(SubscriptionProvider sp) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -693,21 +674,34 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
           children: [
             Container(
               width: 56, height: 56,
-              decoration: BoxDecoration(color: EduColors.royalBlueLight, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: EduColors.royalBlueLight,
+                shape: BoxShape.circle,
+              ),
               child: Icon(Icons.workspace_premium, size: 28, color: EduColors.royalBlue),
             ),
             const SizedBox(height: 12),
-            Text('Upgrade Your Plan', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark)),
+            Text(
+              sp.currentPlanId == 'basic' ? 'Upgrade Your Plan' : '${sp.currentPlan?.name ?? 'Current'} Plan',
+              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
+            ),
             const SizedBox(height: 4),
-            Text('Invite teachers and unlock more features',
-                style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium), textAlign: TextAlign.center),
+            Text(
+              sp.currentPlanId == 'basic'
+                  ? 'Invite teachers and unlock more features'
+                  : 'View available plans and upgrade to get more scans and teachers',
+              style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium), textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity, height: 50,
               child: ElevatedButton.icon(
                 onPressed: () => GoRouter.of(context).push('/purchase'),
                 icon: const Icon(Icons.workspace_premium),
-                label: Text('View Plans', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                label: Text(
+                  sp.currentPlanId == 'basic' ? 'View Plans' : 'Upgrade Plan',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: EduColors.royalBlue, foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

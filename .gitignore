@@ -43,3 +43,27 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Sensitive files — never commit
+*.jks
+*.keystore
+*.env
+.env*
+google-services*.json
+GoogleService-Info.plist
+ServiceAccountKey.json
+a.out
+
+# Node / Firebase Functions
+node_modules/
+package-lock.json
+.firebase/
+
+# Gradle / build
+.gradle/
+**/build/
+local.properties
+local.properties.bak
+
+# IDE
+.vscode/

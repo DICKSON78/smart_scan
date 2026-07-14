@@ -89,10 +89,10 @@ class _VoiceEntryModalState extends State<VoiceEntryModal> {
       onResult: (result) {
         setState(() => _transcribedText = result.recognizedWords);
       },
+      localeId: 'sw-TZ',
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
       listenOptions: stt.SpeechListenOptions(
-        localeId: 'sw-TZ',
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 3),
         cancelOnError: true,
         listenMode: stt.ListenMode.confirmation,
       ),

@@ -1,31 +1,20 @@
 class ApiConfig {
-  /// Set to true to use the PHP backend API instead of local SharedPreferences.
-  /// When false (default), the app uses local storage and does not require network.
-  static bool useApi = false;
+  /// Gemini API key — pass via: flutter run --dart-define=GEMINI_API_KEY=your_key
+  static const String geminiApiKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
 
-  /// The base URL of the PHP API (e.g., https://kkkt.mbgfw.org/api)
-  static const String baseUrl = 'https://kkkt.mbgfw.org/api';
+  /// Gemini model to use
+  static const String geminiModel = 'gemini-2.5-pro';
 
-  /// Auth token stored after login
-  static String? authToken;
+  // ── ClickPesa Payment Gateway ──────────────────────────────────────────────
+  /// ClickPesa API key — pass via: flutter run --dart-define=CLICKPESA_API_KEY=your_key
+  static const String clickPesaApiKey = String.fromEnvironment('CLICKPESA_API_KEY', defaultValue: '');
 
-  // Endpoint paths
-  static const String signup = '/auth/signup';
-  static const String signin = '/auth/signin';
-  static const String inviteLogin = '/auth/invite-login';
-  static const String profile = '/auth/profile';
-  static const String courses = '/courses';
-  static const String creditsDeduct = '/credits/deduct';
-  static const String teamMembers = '/team/members';
-  static const String teamInvite = '/team/invite';
-  static const String teamAllocate = '/team/allocate';
-  static const String teamUsage = '/team/usage';
-  static const String creditsBalance = '/credits/balance';
-  static const String creditsTopup = '/credits/topup';
-  static const String creditsMyUsage = '/credits/my-usage';
-  static const String subscriptionPlans = '/subscription/plans';
-  static const String subscriptionStatus = '/subscription/status';
-  static const String subscriptionPurchase = '/subscription/purchase';
-  static const String logout = '/auth/logout';
-  static const String setup = '/setup';
+  /// ClickPesa client ID — pass via: flutter run --dart-define=CLICKPESA_CLIENT_ID=your_id
+  static const String clickPesaClientId = String.fromEnvironment('CLICKPESA_CLIENT_ID', defaultValue: '');
+
+  /// How often (seconds) to poll ClickPesa for payment status
+  static const int paymentPollIntervalSec = 3;
+
+  /// Max polling attempts (~4.5 min timeout)
+  static const int paymentPollMaxAttempts = 90;
 }

@@ -1,15 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/extraction_session.dart';
 import '../models/student_mark.dart';
+import '../services/api_service.dart';
 import '../services/database_service.dart';
 
 class SessionProvider with ChangeNotifier {
   List<ExtractionSession> _sessions = [];
   String? _activeSessionId;
-  Timer? _debounceTimer;
   final _db = DatabaseService();
+  final _api = ApiService();
 
   List<ExtractionSession> get sessions => List.unmodifiable(_sessions);
   String? get activeSessionId => _activeSessionId;
@@ -22,13 +24,36 @@ class SessionProvider with ChangeNotifier {
   }
 
   @override
-  Future<void> dispose() async {
-    _debounceTimer?.cancel();
+  void dispose() {
     super.dispose();
   }
 
   Future<void> _load() async {
     try {
+      // Load from Firestore via API
+      try {
+        final res = await _api.listSessions();
+        if (res['success'] == true && res['sessions'] is List) {
+          for (final s in res['sessions'] as List) {
+            final sid = s['id'] as String;
+            final name = s['name'] as String? ?? '';
+            final courseCode = s['courseCode'] as String? ?? '';
+            final extractionType = s['extractionType'] as String? ?? 'Exam';
+            final maxMark = (s['maxMark'] as num?)?.toInt() ?? 100;
+            final createdAt = s['createdAt'] as String? ?? DateTime.now().toIso8601String();
+
+            await _db.insertSession({
+              'id': sid,
+              'name': name,
+              'course': courseCode,
+              'extraction_type': extractionType,
+              'max_mark': maxMark,
+              'created_at': createdAt,
+            });
+          }
+        }
+      } catch (_) {}
+
       final rows = await _db.getAllSessions();
       _sessions = [];
       for (final row in rows) {
@@ -100,6 +125,7 @@ class SessionProvider with ChangeNotifier {
   }) async {
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final now = DateTime.now().toIso8601String();
+
     await _db.insertSession({
       'id': id,
       'name': name,
@@ -108,6 +134,17 @@ class SessionProvider with ChangeNotifier {
       'max_mark': maxMark,
       'created_at': now,
     });
+
+    try {
+      await _api.createSession(
+        name: name,
+        subject: course,
+        courseCode: course,
+        maxMark: maxMark,
+        extractionType: extractionType,
+      );
+    } catch (_) {}
+
     final session = ExtractionSession(
       id: id,
       name: name,
@@ -143,6 +180,11 @@ class SessionProvider with ChangeNotifier {
       _activeSessionId = _sessions.isNotEmpty ? _sessions.last.id : null;
     }
     await _db.deleteSession(id);
+
+    try {
+      await _api.deleteSession(id);
+    } catch (_) {}
+
     notifyListeners();
     await _saveActiveSessionId();
   }
@@ -191,6 +233,17 @@ class SessionProvider with ChangeNotifier {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
     if (idx == -1) return;
     _sessions[idx] = _sessions[idx].updateMark(markIndex, updated);
+
+    final dbMarks = await _db.getMarksForSession(sessionId);
+    if (markIndex < dbMarks.length) {
+      final markId = dbMarks[markIndex]['id'] as int;
+      await _db.updateMark(markId, {
+        'registration_number': updated.registrationNumber,
+        'student_name': updated.studentName,
+        'mark': updated.mark,
+        'subject': updated.subject,
+      });
+    }
     notifyListeners();
   }
 

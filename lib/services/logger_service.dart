@@ -109,8 +109,8 @@ class LoggerService {
 
   Future<void> logRegistration(String name, String email) => _write(LogEvent(
     type: 'REGISTRATION',
-    message: 'User registered: $name ($email)',
-    data: {'name': name, 'email': email},
+    message: 'User registered',
+    data: {},
   ));
 
   Future<void> logExtraction(String subject, int imageCount, int marksCount) => _write(LogEvent(

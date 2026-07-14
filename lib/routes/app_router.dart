@@ -11,8 +11,8 @@ import '../screens/purchase/purchase_package_screen.dart';
 import '../screens/teacher/teacher_management_screen.dart';
 
 class AppRouter {
-  static final GoRouter router = GoRouter(
-    initialLocation: '/',
+  static GoRouter router({bool isAuthenticated = false}) => GoRouter(
+    initialLocation: isAuthenticated ? '/home' : '/',
     redirect: (context, state) {
       final authProvider = context.read<AuthProvider>();
 

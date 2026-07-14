@@ -25,7 +25,7 @@ class OCRService {
       
       return studentMarks;
     } catch (e) {
-      debugPrint('Error processing image: $e');
+      if (kDebugMode) debugPrint('Error processing image: $e');
       return [];
     }
   }

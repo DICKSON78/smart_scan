@@ -37,6 +37,12 @@ class MlKitService {
     return results;
   }
 
+  /// Returns the full RecognizedText for cropping analysis.
+  static Future<RecognizedText> recognizeText(File imageFile) async {
+    final inputImage = InputImage.fromFile(imageFile);
+    return _sharedRecognizer.processImage(inputImage);
+  }
+
   static Future<List<List<StudentMark>>> extractMarksFromImages(
     List<File> imageFiles, {
     String subject = 'General',
@@ -65,22 +71,39 @@ class MlKitService {
   }
 
   static (String, String?, num)? _parseLine(String line, int maxMark) {
-    final parts = line.split(RegExp(r'\s{2,}|\t'));
-    if (parts.length < 2) return null;
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return null;
 
-    parts.removeWhere((p) => p.isEmpty);
+    // Find the last number in the line as the mark
+    final markMatch = RegExp(r'(\d+(?:\.\d+)?)\s*$').firstMatch(trimmed);
+    if (markMatch == null) return null;
 
-    final last = parts.last.trim();
-    final markVal = num.tryParse(last);
-
+    final markVal = num.tryParse(markMatch.group(1)!);
     if (markVal == null || markVal < 0 || markVal > maxMark) return null;
 
-    if (parts.length == 2) {
-      return (parts[0].trim(), null, markVal);
+    // Everything before the mark is reg number + name
+    final beforeMark = trimmed.substring(0, markMatch.start).trim();
+    if (beforeMark.isEmpty) return null;
+
+    // Split by 2+ spaces, tabs, pipes, or commas first
+    final parts = beforeMark.split(RegExp(r'\s{2,}|\t|\||,'));
+    if (parts.length >= 2) {
+      parts.removeWhere((p) => p.trim().isEmpty);
+      final regNum = parts[0].trim();
+      final name = parts.sublist(1).join(' ').trim();
+      return (regNum, name.isNotEmpty ? name : null, markVal);
     }
 
-    final regNum = parts[0].trim();
-    final name = parts.sublist(1, parts.length - 1).join(' ').trim();
-    return (regNum, name.isNotEmpty ? name : null, markVal);
+    // Single separator — try to split reg number from name
+    // Reg numbers typically contain digits and punctuation like / . -
+    final text = beforeMark.trim();
+    final regMatch = RegExp(r'^([\w\/\.\-]+)\s+(.+)$').firstMatch(text);
+    if (regMatch != null) {
+      final name = regMatch.group(2)!.trim();
+      return (regMatch.group(1)!, name.isNotEmpty ? name : null, markVal);
+    }
+
+    // No clear separator — return whole text as reg number
+    return (text, null, markVal);
   }
 }

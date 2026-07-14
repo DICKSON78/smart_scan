@@ -2,31 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class EduColors {
-  static const Color royalBlue = Color(0xFF1A56DB);
-  static const Color royalBlueDark = Color(0xFF1243AF);
-  static const Color royalBlueLight = Color(0xFFD6E4FF);
+  static const Color royalBlue = Color(0xFF0A223E);
+  static const Color royalBlueDark = Color(0xFF061526);
+  static const Color royalBlueLight = Color(0xFFD6E4F0);
   static const Color white = Color(0xFFFFFFFF);
   static const Color offWhite = Color(0xFFF8F9FC);
-  static const Color textDark = Color(0xFF1E293B);
+  static const Color textDark = Color(0xFF0A223E);
   static const Color textMedium = Color(0xFF64748B);
   static const Color textLight = Color(0xFF94A3B8);
   static const Color success = Color(0xFF10B981);
   static const Color successLight = Color(0xFFD1FAE5);
   static const Color warning = Color(0xFFF59E0B);
   static const Color error = Color(0xFFEF4444);
+  static const Color errorLight = Color(0xFFFEE2E2);
   static const Color cardBorder = Color(0xFFE2E8F0);
   static const Color surface = Color(0xFFF1F5F9);
 
   // Dark theme colors
-  static const Color darkBg = Color(0xFF0F172A);
-  static const Color darkSurface = Color(0xFF1E293B);
-  static const Color darkCard = Color(0xFF1E293B);
-  static const Color darkCardBorder = Color(0xFF334155);
+  static const Color darkBg = Color(0xFF0A223E);
+  static const Color darkSurface = Color(0xFF122D4A);
+  static const Color darkCard = Color(0xFF122D4A);
+  static const Color darkCardBorder = Color(0xFF1E3A56);
   static const Color darkText = Color(0xFFF1F5F9);
   static const Color darkTextMedium = Color(0xFF94A3B8);
   static const Color darkTextLight = Color(0xFF64748B);
-  static const Color darkAppBar = Color(0xFF1E293B);
-  static const Color darkInputFill = Color(0xFF334155);
+  static const Color darkAppBar = Color(0xFF0A223E);
+  static const Color darkInputFill = Color(0xFF1E3A56);
 }
 
 class EduTheme {

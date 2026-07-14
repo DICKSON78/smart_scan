@@ -1,18 +1,25 @@
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/api_config.dart';
 import '../services/api_service.dart';
 import '../services/logger_service.dart';
 
 class AppUser {
+  final String id;
   final String email;
   final String? name;
   final bool isAdmin;
   final int credits;
-  AppUser({required this.email, this.name, this.isAdmin = true, this.credits = 0});
+  final String? parentAdminId;
+  AppUser({required this.id, required this.email, this.name, this.isAdmin = false, this.credits = 0, this.parentAdminId});
 }
 
 class AuthProvider with ChangeNotifier {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   AppUser? _user;
   bool _isLoading = false;
   bool _initialized = false;
@@ -23,74 +30,86 @@ class AuthProvider with ChangeNotifier {
   bool get initialized => _initialized;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _user != null;
-  bool get isAdmin => _user?.isAdmin ?? true;
+  bool get isAdmin => _user?.isAdmin ?? false;
   int get credits => _user?.credits ?? 0;
 
-  AuthProvider() {
-    _initialized = true;
-  }
+  AuthProvider();
 
   Future<bool> tryAutoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    final email = prefs.getString('userEmail');
-    if (email == null) return false;
-
-    final name = prefs.getString('userName');
-    final isAdmin = prefs.getBool('isAdmin') ?? true;
-    final credits = prefs.getInt('credits') ?? 0;
-    _user = AppUser(email: email, name: name, isAdmin: isAdmin, credits: credits);
-    _initialized = true;
-    notifyListeners();
-    return true;
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      _initialized = true;
+      return false;
+    }
+    return _loadUser(currentUser.uid);
   }
 
-  Future<bool> signUp(String email, String password, String name) async {
+  Future<bool> _loadUser(String uid) async {
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (!doc.exists) {
+        _initialized = true;
+        return false;
+      }
+      final data = doc.data()!;
+      _user = AppUser(
+        id: uid,
+        email: data['email'] as String? ?? '',
+        name: data['name'] as String?,
+        isAdmin: data['isAdmin'] as bool? ?? false,
+        credits: (data['credits'] as num?)?.toInt() ?? 0,
+        parentAdminId: data['parentAdminId'] as String?,
+      );
+      _initialized = true;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      LoggerService.instance.logError('AuthProvider', 'Auto login failed: $e');
+      _initialized = true;
+      return false;
+    }
+  }
+
+  Future<bool> signUp(String email, String password, String name, {bool isAdmin = false}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      await credential.user?.updateDisplayName(name);
+
+      final uid = credential.user!.uid;
+      final userData = {
+        'email': email,
+        'name': _capitalize(name),
+        'isAdmin': isAdmin,
+        'credits': 3,
+        'subscriptionPlan': 'basic',
+        'institutionName': '',
+        'parentAdminId': null,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      await _firestore.collection('users').doc(uid).set(userData);
+
+      _user = AppUser(id: uid, email: email, name: _capitalize(name), isAdmin: isAdmin, credits: 3);
+
       final prefs = await SharedPreferences.getInstance();
-
-      if (ApiConfig.useApi) {
-        try {
-          final result = await ApiService().signup(email, password, name);
-          final user = result['user'] as Map<String, dynamic>;
-          await prefs.setString('userEmail', user['email'] as String);
-          await prefs.setString('userName', user['name'] as String);
-          await prefs.setBool('isAdmin', (user['isAdmin'] as bool?) ?? true);
-          await prefs.setInt('credits', (user['credits'] as num?)?.toInt() ?? 0);
-          await prefs.setBool('hasSeenOnboarding', true);
-          _user = AppUser(
-            email: user['email'] as String,
-            name: user['name'] as String?,
-            isAdmin: (user['isAdmin'] as bool?) ?? true,
-            credits: (user['credits'] as num?)?.toInt() ?? 0,
-          );
-          _isLoading = false;
-          notifyListeners();
-          return true;
-        } on ApiException catch (e) {
-          _errorMessage = e.message;
-          _isLoading = false;
-          notifyListeners();
-          return false;
-        }
-      }
-
       await prefs.setString('userEmail', email);
-      await prefs.setString('userName', name);
-      await prefs.setBool('isAdmin', true);
-      await prefs.setBool('hasSeenOnboarding', true);
-      await prefs.setInt('credits', 50);
-      _user = AppUser(email: email, name: name, isAdmin: true, credits: 50);
+      await prefs.setString('userName', _capitalize(name));
+      await prefs.setBool('isAdmin', isAdmin);
+
       _isLoading = false;
       notifyListeners();
-      LoggerService.instance.logRegistration(name, email);
       return true;
-    } catch (e) {
+    } on FirebaseAuthException catch (e) {
+      _errorMessage = e.message ?? 'Sign up failed';
       _isLoading = false;
-      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Network error: unable to connect';
+      _isLoading = false;
       notifyListeners();
       return false;
     }
@@ -102,170 +121,208 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      final uid = credential.user!.uid;
+      final loaded = await _loadUser(uid);
 
-      if (ApiConfig.useApi) {
-        try {
-          final result = await ApiService().signin(email, password);
-          final user = result['user'] as Map<String, dynamic>;
-          await prefs.setString('userEmail', user['email'] as String);
-          await prefs.setString('userName', user['name'] as String);
-          await prefs.setBool('isAdmin', (user['isAdmin'] as bool?) ?? true);
-          await prefs.setInt('credits', (user['credits'] as num?)?.toInt() ?? 0);
-          await prefs.setBool('hasSeenOnboarding', true);
-          _user = AppUser(
-            email: user['email'] as String,
-            name: user['name'] as String?,
-            isAdmin: (user['isAdmin'] as bool?) ?? true,
-            credits: (user['credits'] as num?)?.toInt() ?? 0,
-          );
-          _isLoading = false;
-          notifyListeners();
-          return true;
-        } on ApiException catch (e) {
-          _errorMessage = e.message;
-          _isLoading = false;
-          notifyListeners();
-          return false;
-        }
+      if (loaded) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userEmail', email);
+        if (_user?.name != null) await prefs.setString('userName', _user!.name!);
+        await prefs.setBool('isAdmin', _user?.isAdmin ?? false);
       }
 
-      final storedName = prefs.getString('userName');
-      final name = storedName ?? email.split('@').first;
-      final storedCredits = prefs.getInt('credits') ?? 50;
-      final storedIsAdmin = prefs.getBool('isAdmin') ?? true;
-      await prefs.setString('userEmail', email);
-      await prefs.setBool('hasSeenOnboarding', true);
-      _user = AppUser(email: email, name: name, isAdmin: storedIsAdmin, credits: storedCredits);
       _isLoading = false;
       notifyListeners();
-      return true;
-    } catch (e) {
+      return loaded;
+    } on FirebaseAuthException catch (e) {
+      _errorMessage = e.message ?? 'Sign in failed';
       _isLoading = false;
-      _errorMessage = e.toString();
       notifyListeners();
       return false;
-    }
-  }
-
-  Future<bool> signInWithInviteCode(String code, String name) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      if (ApiConfig.useApi) {
-        try {
-          final result = await ApiService().inviteLogin(code, name);
-          final user = result['user'] as Map<String, dynamic>;
-          await prefs.setString('userEmail', user['email'] as String);
-          await prefs.setString('userName', user['name'] as String);
-          await prefs.setBool('isAdmin', false);
-          await prefs.setInt('credits', (user['credits'] as num?)?.toInt() ?? 0);
-          await prefs.setBool('hasSeenOnboarding', true);
-          _user = AppUser(
-            email: user['email'] as String,
-            name: user['name'] as String?,
-            isAdmin: false,
-            credits: (user['credits'] as num?)?.toInt() ?? 0,
-          );
-          _isLoading = false;
-          notifyListeners();
-          return true;
-        } on ApiException catch (e) {
-          _errorMessage = e.message;
-          _isLoading = false;
-          notifyListeners();
-          return false;
-        }
-      }
-
-      final placeholderEmail = 'invited_${DateTime.now().millisecondsSinceEpoch}@temp.com';
-      final inviteCredits = prefs.getInt('invite_code_credits_$code') ?? 500;
-      await prefs.setString('userEmail', placeholderEmail);
-      await prefs.setString('userName', name);
-      await prefs.setBool('isAdmin', false);
-      await prefs.setBool('hasSeenOnboarding', true);
-      await prefs.setInt('credits', inviteCredits);
-      _user = AppUser(email: placeholderEmail, name: name, isAdmin: false, credits: inviteCredits);
-      _isLoading = false;
-      notifyListeners();
-      LoggerService.instance.logInviteRedeemed(code, name);
-      return true;
     } catch (e) {
+      _errorMessage = 'Network error: unable to connect';
       _isLoading = false;
-      _errorMessage = e.toString();
       notifyListeners();
       return false;
     }
   }
 
   Future<void> signOut() async {
-    if (ApiConfig.useApi && ApiConfig.authToken != null) {
-      try {
-        await ApiService().logout();
-      } catch (_) {}
-    }
     final prefs = await SharedPreferences.getInstance();
+    await GoogleSignIn().signOut();
+    await _auth.signOut();
+    _user = null;
     await prefs.remove('userEmail');
     await prefs.remove('userName');
     await prefs.remove('isAdmin');
-    ApiConfig.authToken = null;
-    _user = null;
+    await prefs.remove('credits');
     notifyListeners();
   }
 
-  Future<void> addCredits(int count) async {
-    if (_user == null) return;
-    final newCredits = _user!.credits + count;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('credits', newCredits);
-    _user = AppUser(
-      email: _user!.email,
-      name: _user!.name,
-      isAdmin: _user!.isAdmin,
-      credits: newCredits,
-    );
+  Future<bool> signInWithGoogle() async {
+    _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
+
+    try {
+      final googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        _isLoading = false;
+        _errorMessage = 'Sign in cancelled';
+        notifyListeners();
+        return false;
+      }
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final userCredential = await _auth.signInWithCredential(credential);
+      final uid = userCredential.user!.uid;
+      final email = userCredential.user!.email ?? '';
+
+      // Check if user doc exists, create if not
+      final docRef = _firestore.collection('users').doc(uid);
+      final doc = await docRef.get();
+      if (!doc.exists) {
+        final displayName = userCredential.user!.displayName ?? email.split('@').first;
+        await docRef.set({
+          'email': email,
+          'name': _capitalize(displayName),
+          'isAdmin': false,
+          'credits': 3,
+          'subscriptionPlan': 'basic',
+          'institutionName': '',
+          'parentAdminId': null,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      final loaded = await _loadUser(uid);
+      if (loaded) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userEmail', email);
+        if (_user?.name != null) await prefs.setString('userName', _user!.name!);
+        await prefs.setBool('isAdmin', _user?.isAdmin ?? false);
+      }
+
+      _isLoading = false;
+      notifyListeners();
+      return loaded;
+    } on FirebaseAuthException catch (e) {
+      _errorMessage = e.message ?? 'Google sign in failed';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Network error: unable to connect';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
-  Future<void> deductCredits(int count) async {
-    if (_user == null) return;
-    final newCredits = (_user!.credits - count).clamp(0, 999999999);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('credits', newCredits);
-    _user = AppUser(
-      email: _user!.email,
-      name: _user!.name,
-      isAdmin: _user!.isAdmin,
-      credits: newCredits,
-    );
+  Future<bool> changePassword(String currentPassword, String newPassword) async {
+    _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null || user.email == null) {
+        _errorMessage = 'Not logged in';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+      final cred = EmailAuthProvider.credential(email: user.email!, password: currentPassword);
+      await user.reauthenticateWithCredential(cred);
+      await user.updatePassword(newPassword);
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on FirebaseAuthException catch (e) {
+      _errorMessage = e.message ?? 'Password change failed';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Network error: unable to connect';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateProfile({String? name, String? institutionName}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await ApiService().updateProfile(name: name, institutionName: institutionName);
+      if (name != null) {
+        await _auth.currentUser?.updateDisplayName(name);
+        _user = AppUser(
+          id: _user!.id,
+          email: _user!.email,
+          name: _capitalize(name),
+          isAdmin: _user!.isAdmin,
+          credits: _user!.credits,
+          parentAdminId: _user!.parentAdminId,
+        );
+      }
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Network error: unable to connect';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> refreshCredits() async {
-    if (!ApiConfig.useApi) return;
     try {
-      final result = await ApiService().getCreditsBalance();
-      final newCredits = result['credits'] as int;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('credits', newCredits);
-      if (_user != null) {
+      final res = await ApiService().getCreditsBalance();
+      if (res['success'] == true && _user != null) {
+        final newCredits = (res['credits'] as num).toInt();
         _user = AppUser(
+          id: _user!.id,
           email: _user!.email,
           name: _user!.name,
           isAdmin: _user!.isAdmin,
           credits: newCredits,
+          parentAdminId: _user!.parentAdminId,
         );
+        notifyListeners();
       }
-      notifyListeners();
     } catch (_) {}
   }
 
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
+  Future<void> addCredits(int count) async {
+    if (_user == null) return;
+    try {
+      await ApiService().addCredits(count);
+    } catch (_) {}
+    await refreshCredits();
+  }
+
+  Future<void> deductCredits(int count) async {
+    if (_user == null) return;
+    try {
+      await ApiService().deductCredits(count: count);
+    } catch (_) {}
+    await refreshCredits();
+  }
+
+  String _capitalize(String text) {
+    if (text.isEmpty) return text;
+    return text.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
   }
 }

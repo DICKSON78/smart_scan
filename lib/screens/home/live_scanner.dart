@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image/image.dart' as img;
+import 'package:permission_handler/permission_handler.dart';
 import '../../utils/theme.dart';
 
 class LiveScanner extends StatefulWidget {
@@ -26,7 +26,6 @@ class _LiveScannerState extends State<LiveScanner> {
   CameraController? _controller;
   bool _isCameraReady = false;
   final List<File> _capturedImages = [];
-  Size _previewSize = Size.zero;
 
   @override
   void initState() {
@@ -36,6 +35,13 @@ class _LiveScannerState extends State<LiveScanner> {
 
   Future<void> _initCamera() async {
     try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (kDebugMode) debugPrint('Camera permission denied');
+        if (mounted) setState(() => _isCameraReady = false);
+        return;
+      }
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         if (mounted) setState(() => _isCameraReady = false);
@@ -45,20 +51,9 @@ class _LiveScannerState extends State<LiveScanner> {
       await _controller!.initialize();
       if (mounted) setState(() => _isCameraReady = true);
     } catch (e) {
-      debugPrint('Camera init error: $e');
+      if (kDebugMode) debugPrint('Camera init error: $e');
       if (mounted) setState(() => _isCameraReady = false);
     }
-  }
-
-  Rect _scanRegion(Size previewSize) {
-    final w = previewSize.width * 0.9;
-    final h = previewSize.height * 0.55;
-    return Rect.fromLTWH(
-      (previewSize.width - w) / 2,
-      (previewSize.height - h) / 2,
-      w,
-      h,
-    );
   }
 
   Future<void> _captureImage() async {
@@ -66,33 +61,10 @@ class _LiveScannerState extends State<LiveScanner> {
     try {
       final xFile = await _controller!.takePicture();
       final file = File(xFile.path);
-      final cropped = await _cropToScanRegion(file);
-      if (mounted) setState(() => _capturedImages.add(cropped));
-      unawaited(file.delete());
+      if (mounted) setState(() => _capturedImages.add(file));
     } catch (e) {
-      debugPrint('Capture error: $e');
+      if (kDebugMode) debugPrint('Capture error: $e');
     }
-  }
-
-  Future<File> _cropToScanRegion(File file) async {
-    final bytes = await file.readAsBytes();
-    final original = img.decodeImage(bytes);
-    if (original == null) return file;
-
-    final region = _scanRegion(_previewSize);
-    if (region.width <= 0 || region.height <= 0) return file;
-
-    final scaleX = original.width / _previewSize.width;
-    final scaleY = original.height / _previewSize.height;
-    final cropX = (region.left * scaleX).round().clamp(0, original.width);
-    final cropY = (region.top * scaleY).round().clamp(0, original.height);
-    final cropW = (region.width * scaleX).round().clamp(1, original.width - cropX);
-    final cropH = (region.height * scaleY).round().clamp(1, original.height - cropY);
-
-    final cropped = img.copyCrop(original, x: cropX, y: cropY, width: cropW, height: cropH);
-    final jpeg = img.encodeJpg(cropped, quality: 85);
-    await file.writeAsBytes(jpeg);
-    return file;
   }
 
   @override
@@ -104,7 +76,7 @@ class _LiveScannerState extends State<LiveScanner> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width - 32;
-    final previewSize = Size(screenWidth, screenWidth);
+    final previewSize = Size(screenWidth, screenWidth * 4 / 3);
 
     return Column(
       children: [
@@ -116,23 +88,12 @@ class _LiveScannerState extends State<LiveScanner> {
               child: Stack(
                 children: [
                   CameraPreview(_controller!),
-                  LayoutBuilder(
-                    builder: (_, constraints) {
-                      _previewSize = constraints.biggest;
-                      return CustomPaint(
-                        size: _previewSize,
-                        painter: _ScanOverlayPainter(
-                          scanRegion: _scanRegion(_previewSize),
-                        ),
-                      );
-                    },
-                  ),
                 ],
               ),
             ),
           )
         else
-          _buildCameraPlaceholder(screenWidth),
+          _buildCameraPlaceholder(previewSize),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
@@ -222,10 +183,10 @@ class _LiveScannerState extends State<LiveScanner> {
     );
   }
 
-  Widget _buildCameraPlaceholder(double size) {
+  Widget _buildCameraPlaceholder(Size size) {
     return Container(
-      width: size,
-      height: size,
+      width: size.width,
+      height: size.height,
       decoration: BoxDecoration(
         color: EduColors.royalBlueLight.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
@@ -248,30 +209,4 @@ class _LiveScannerState extends State<LiveScanner> {
   }
 }
 
-class _ScanOverlayPainter extends CustomPainter {
-  final Rect scanRegion;
 
-  _ScanOverlayPainter({required this.scanRegion});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final overlayPaint = Paint()..color = Colors.black.withValues(alpha: 0.55);
-    canvas.drawPath(
-      Path.combine(
-        PathOperation.difference,
-        Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
-        Path()..addRRect(RRect.fromRectAndRadius(scanRegion, const Radius.circular(8))),
-      ),
-      overlayPaint,
-    );
-
-    final borderPaint = Paint()
-      ..color = EduColors.royalBlue
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawRRect(RRect.fromRectAndRadius(scanRegion, const Radius.circular(8)), borderPaint);
-  }
-
-  @override
-  bool shouldRepaint(_ScanOverlayPainter old) => scanRegion != old.scanRegion;
-}

@@ -16,9 +16,10 @@ import '../../providers/course_provider.dart';
 import '../../providers/result_provider.dart';
 import '../../providers/audit_provider.dart';
 import '../../providers/session_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../models/student_mark.dart';
 import '../../models/extraction_session.dart';
-import '../../services/gemini_service.dart';
+import '../../services/hybrid_ocr_service.dart';
 import '../../services/image_processor.dart';
 import '../../services/excel_service.dart';
 import '../../services/logger_service.dart';
@@ -87,11 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
           iconData: t.icon,
           title: t.title,
           tabColor: EduColors.royalBlue,
-          tabGradient: const LinearGradient(
-            colors: [EduColors.royalBlueDark, EduColors.royalBlue],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          tabGradient: null,
         )).toList();
 
         return Scaffold(
@@ -134,7 +131,7 @@ class HomeTabContent extends StatefulWidget {
 }
 
 class _HomeTabContentState extends State<HomeTabContent> {
-  final GeminiService _geminiService = GeminiService();
+  final HybridOcrService _hybridOcrService = HybridOcrService();
   final ExcelService _excelService = ExcelService();
 
   final List<File> _selectedImages = [];
@@ -174,6 +171,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
 
   @override
   void dispose() {
+    _hybridOcrService.dispose();
     _speech?.stop();
     super.dispose();
   }
@@ -203,20 +201,12 @@ class _HomeTabContentState extends State<HomeTabContent> {
 
       final compressed = await ImageProcessor.compressImages(_selectedImages);
 
-      final geminiResults = await _geminiService.extractMarks(
+      final marks = await _hybridOcrService.extractMarksFromImages(
         compressed,
-        maxMark: maxMark,
-      );
-
-      final marks = geminiResults.map((g) => StudentMark(
-        registrationNumber: g.regNumber,
-        studentName: g.studentName,
-        mark: g.mark?.toStringAsFixed(g.mark == g.mark?.roundToDouble() ? 0 : 1) ?? 'N/A',
         subject: subject,
-        extractedAt: DateTime.now(),
-        extractionType: extractionType,
         maxMark: maxMark,
-      )).toList();
+        extractionType: extractionType,
+      );
 
       if (marks.isEmpty) {
         _showSnack('No marks could be extracted');
@@ -840,10 +830,10 @@ class _HomeTabContentState extends State<HomeTabContent> {
       onResult: (result) {
         setState(() => _voiceTranscribedText = result.recognizedWords);
       },
+      localeId: 'sw-TZ',
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
       listenOptions: stt.SpeechListenOptions(
-        localeId: 'sw-TZ',
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 3),
         cancelOnError: true,
         listenMode: stt.ListenMode.confirmation,
       ),
@@ -1113,11 +1103,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [EduColors.royalBlue, EduColors.royalBlueDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: EduColors.royalBlue,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -1283,7 +1269,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
                             ),
                           ),
                           Text(
-                            auth.user?.name ?? 'Teacher',
+                            _capitalize(auth.user?.name ?? 'Teacher'),
                             style: GoogleFonts.poppins(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -1291,6 +1277,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
                               height: 1.2,
                             ),
                           ),
+
                         ],
                       ),
                     ),
@@ -1329,11 +1316,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [EduColors.royalBlue, EduColors.royalBlueDark],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: EduColors.royalBlue,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -1409,21 +1392,22 @@ class _HomeTabContentState extends State<HomeTabContent> {
                                     borderRadius:
                                         BorderRadius.circular(10)),
                                 elevation: 0,
+                                overlayColor: EduColors.royalBlue.withValues(alpha: 0.1),
                               ),
                             ),
                           ),
-                          if (sessions.isNotEmpty) ...[
+                          if (auth.credits < 1) ...[
                             const SizedBox(width: 10),
                             Expanded(
                               child: OutlinedButton.icon(
                                 onPressed: () =>
-                                    widget.onNavigateToHistory?.call(),
+                                    _showJoinTeamSheet(context),
                                 icon: const Icon(
-                                    Icons.history_outlined,
+                                    Icons.group_add,
                                     size: 16,
                                     color: Colors.white),
                                 label: Text(
-                                  'History',
+                                  'Join Team',
                                   style: GoogleFonts.poppins(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
@@ -1439,6 +1423,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
                                           BorderRadius.circular(10)),
+                                  overlayColor: Colors.white.withValues(alpha: 0.15),
                                 ),
                               ),
                             ),
@@ -2157,6 +2142,13 @@ class _HomeTabContentState extends State<HomeTabContent> {
     });
   }
 
+  String _capitalize(String text) {
+    return text.split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
+    }).join(' ');
+  }
+
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2164,5 +2156,101 @@ class _HomeTabContentState extends State<HomeTabContent> {
     );
   }
 
+  void _showJoinTeamSheet(BuildContext context) {
+    final codeCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        bool loading = false;
+        String? error;
+        return StatefulBuilder(builder: (context, setSheetState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24, right: 24, top: 24,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: EduColors.cardBorder,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Icon(Icons.vpn_key, color: EduColors.royalBlue),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Join a Team',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: EduColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Enter an invitation code to join your colleague\'s team and share their subscription.',
+                  style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: codeCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'Invitation Code',
+                    prefixIcon: Icon(Icons.vpn_key, color: EduColors.royalBlue),
+                    border: const OutlineInputBorder(),
+                    errorText: error,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: loading
+                      ? null
+                      : () async {
+                          final code = codeCtrl.text.trim().toUpperCase();
+                          if (code.isEmpty) return;
+                          setSheetState(() { loading = true; error = null; });
+                          final sub = context.read<SubscriptionProvider>();
+                          final success = await sub.joinTeamViaCode(code);
+                          if (success && mounted) {
+                            context.read<AuthProvider>().refreshCredits();
+                            Navigator.pop(ctx);
+                            _showSnack('Team joined successfully');
+                          } else {
+                            setSheetState(() { loading = false; error = 'Invalid or expired code'; });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: EduColors.royalBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: loading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text('Join Team', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    ).whenComplete(() => codeCtrl.dispose());
+  }
 
 }

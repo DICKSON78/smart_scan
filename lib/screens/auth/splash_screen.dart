@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../utils/theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -34,9 +36,12 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) GoRouter.of(context).go('/sign-in');
-      });
+      if (!context.mounted) return;
+      if (context.read<AuthProvider>().isAuthenticated) {
+        GoRouter.of(context).go('/home');
+      } else {
+        GoRouter.of(context).go('/sign-in');
+      }
     });
   }
 
@@ -53,11 +58,7 @@ class _SplashScreenState extends State<SplashScreen>
         width: double.infinity,
         height: double.infinity,
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [EduColors.royalBlueDark, EduColors.royalBlue],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+          color: EduColors.royalBlue,
         ),
         child: Stack(
           alignment: Alignment.center,

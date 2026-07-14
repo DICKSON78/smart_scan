@@ -49,7 +49,7 @@ Uint8List _resizeImageBytesSync(Map<String, dynamic> params) {
 }
 
 class GeminiService {
-  static const _apiKey = 'AIzaSyBUz9GATSW8PaLbbp1jeLcHUBEs8frsaw8';
+  static const _apiKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
 
   final GenerativeModel _model;
   final int _maxRetries = 3;
