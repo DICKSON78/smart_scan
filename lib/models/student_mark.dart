@@ -55,9 +55,9 @@ class StudentMark {
 
   List<CellValue?> toExcelRow() {
     return [
+      TextCellValue(studentName ?? ''),
       TextCellValue(registrationNumber),
       TextCellValue(mark),
-      TextCellValue(remark),
     ];
   }
 

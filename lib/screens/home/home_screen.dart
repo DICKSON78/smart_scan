@@ -1294,7 +1294,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.bolt,
+                          Icon(Icons.account_balance_wallet,
                               size: 13, color: EduColors.royalBlue),
                           const SizedBox(width: 4),
                           Text(

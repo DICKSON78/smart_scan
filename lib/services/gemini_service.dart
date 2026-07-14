@@ -56,7 +56,7 @@ class GeminiService {
 
   GeminiService({int maxMark = 100})
       : _model = GenerativeModel(
-          model: 'gemini-2.5-pro',
+          model: 'gemini-2.5-flash',
           apiKey: _apiKey,
           generationConfig: GenerationConfig(
             temperature: 0,
@@ -69,9 +69,9 @@ class GeminiService {
                 'studentName': Schema(SchemaType.string,
                     description: 'Student full name if visible, otherwise empty string'),
                 'mark': Schema(SchemaType.number,
-                    description: 'The exact numeric score. Must be 0 or higher.'),
+                    description: 'The numeric score exactly as written'),
               },
-              requiredProperties: ['studentId', 'studentName', 'mark'],
+              requiredProperties: ['studentId', 'mark'],
             )),
           ),
         );
@@ -92,18 +92,18 @@ class GeminiService {
       final imageParts = await Future.wait(images.map(_resizeImage));
 
       final prompt = TextPart(
-        'You are an OCR assistant for Tanzanian university exam mark sheets.\n\n'
-        'Extract EVERY student record visible in the image(s) as a JSON array.\n\n'
+        'OCR Task: Extract student records from this mark sheet or assignment image.\n\n'
+        'For EACH student row, extract:\n'
+        '1. studentId: The Registration Number or Student ID exactly as written\n'
+        '2. studentName: The Student Name exactly as written\n'
+        '3. mark: The numeric score exactly as written\n\n'
         'Rules:\n'
-        '1. studentId: Copy the registration/admission number EXACTLY as written (e.g., "S.1/001", "2023/CS/001", "T/1234"). Do NOT modify, increment, or fabricate it.\n'
-        '2. studentName: Copy the student\'s full name exactly as written. Use empty string if no name column exists.\n'
-        '3. mark: The numeric score EXACTLY as written (e.g., 68, 45.5, 72). Must be a number. Do NOT guess, estimate, or make up marks.\n'
-        '4. If a student has no score written, set mark to null (but still include them).\n'
-        '5. Maximum possible mark is $maxMark.\n'
-        '6. Include ALL students in the order they appear on the sheet.\n'
-        '7. Output ONLY a valid JSON array — no preamble, no explanation.\n'
-        '8. The OCR must be precise: every digit and character matters.\n'
-        '9. Ignore header rows (e.g., "Reg No", "Name", "Score", "Marks") — do not include them as data.',
+        '- Extract ALL student records visible in the image\n'
+        '- Copy every character exactly — do not modify, guess, or fabricate\n'
+        '- Max mark is $maxMark. If mark exceeds $maxMark, set to null\n'
+        '- If a field is not visible, use empty string\n'
+        '- Ignore headers, column titles, page numbers, totals, averages\n'
+        '- Return ONLY a valid JSON array. No other text.',
       );
 
       final response = await _model.generateContent([

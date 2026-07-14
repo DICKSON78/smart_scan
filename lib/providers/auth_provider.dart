@@ -302,6 +302,24 @@ class AuthProvider with ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> refreshUserProfile() async {
+    try {
+      if (_user == null) return;
+      final doc = await _firestore.collection('users').doc(_user!.id).get();
+      if (!doc.exists) return;
+      final data = doc.data()!;
+      _user = AppUser(
+        id: _user!.id,
+        email: data['email'] as String? ?? _user!.email,
+        name: data['name'] as String? ?? _user!.name,
+        isAdmin: data['isAdmin'] as bool? ?? false,
+        credits: (data['credits'] as num?)?.toInt() ?? _user!.credits,
+        parentAdminId: data['parentAdminId'] as String?,
+      );
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> addCredits(int count) async {
     if (_user == null) return;
     try {
@@ -312,6 +330,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> deductCredits(int count) async {
     if (_user == null) return;
+    if (_user!.credits < count) return;
     try {
       await ApiService().deductCredits(count: count);
     } catch (_) {}

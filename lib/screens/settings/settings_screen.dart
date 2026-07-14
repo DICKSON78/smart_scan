@@ -22,10 +22,8 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           children: [
             _buildProfileCard(auth),
-            if (auth.isAdmin) ...[
-              const SizedBox(height: 20),
-              _buildSubscriptionCard(context, sub),
-            ],
+            const SizedBox(height: 20),
+            _buildSubscriptionCard(context, sub),
             const SizedBox(height: 20),
             _buildSection('General', [
               _buildSettingTile(

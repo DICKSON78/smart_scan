@@ -169,7 +169,7 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.bolt, size: 18, color: EduColors.royalBlue),
+              Icon(Icons.account_balance_wallet, size: 18, color: EduColors.royalBlue),
               const SizedBox(width: 8),
               Text(
                 '${auth.credits} scans remaining',
@@ -273,14 +273,14 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
             SizedBox(
               width: double.infinity,
               height: 56,
-              child: OutlinedButton.icon(
+                child: OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
                   _showCardPaymentDialog(context, plan);
                 },
-                icon: const Icon(Icons.credit_card),
+                icon: const Icon(Icons.account_balance),
                 label: Text(
-                  'Card / Visa / Mastercard',
+                  'Bank Payment',
                   style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -307,61 +307,132 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
   }
 
   void _showCardPaymentDialog(BuildContext context, _PricingPlan plan) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: EduColors.royalBlueLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.account_balance, size: 32, color: EduColors.royalBlue),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Bank Payment',
+              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${plan.title} - ${plan.price}',
+              style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Card payments will be available soon. Please use Mobile Money for now.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _doMobilePayment(context, plan);
+                },
+                icon: const Icon(Icons.phone_android),
+                label: Text(
+                  'Use Mobile Money Instead',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: EduColors.royalBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPaymentWaitingCard(BuildContext context, _PricingPlan plan) {
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: EduColors.royalBlueLight,
-                  borderRadius: BorderRadius.circular(12),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Text(
+              'Card payments are coming soon!',
+              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'For now, please use Mobile Money to complete your payment.',
+              style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showPaymentSheet(context, plan);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: EduColors.royalBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                 ),
-                child: const Icon(Icons.credit_card, size: 32, color: EduColors.royalBlue),
+                child: Text('Use Mobile Money', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Card Payment (Coming Soon)',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Card payments will be available soon. Please use Mobile Money for now.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _doMobilePayment(context, plan);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: EduColors.royalBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                  ),
-                  child: Text(
-                    'Use Mobile Money Instead',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
+            ),
+          ],
         ),
       ),
     );
@@ -369,73 +440,90 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
 
   Future<void> _doMobilePayment(BuildContext context, _PricingPlan plan) async {
     final phoneCtrl = TextEditingController();
-    final confirmed = await showDialog<String>(
+    final confirmed = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: EduColors.royalBlueLight,
-                  borderRadius: BorderRadius.circular(12),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: EduColors.royalBlueLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.phone_android, size: 32, color: EduColors.royalBlue),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Mobile Payment',
+              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${plan.title} - ${plan.price}',
+              style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Phone Number',
+                hintText: 'e.g. 0789 123 456',
+                prefixIcon: const Icon(Icons.phone, color: EduColors.royalBlue),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {
+                  final phone = phoneCtrl.text.trim();
+                  if (phone.isEmpty) return;
+                  Navigator.pop(ctx, phone);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: EduColors.royalBlue,
+                  foregroundColor: Colors.white,
+                  overlayColor: EduColors.white.withValues(alpha: 0.1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Icon(Icons.phone_android, size: 32, color: EduColors.royalBlue),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Mobile Payment',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: EduColors.textDark),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${plan.title} - ${plan.price}',
-                style: GoogleFonts.poppins(fontSize: 14, color: EduColors.textMedium),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: 'e.g. 0789 123 456',
-                  prefixIcon: const Icon(Icons.phone, color: EduColors.royalBlue),
-                  border: OutlineInputBorder(),
+                child: Text(
+                  'Pay Now',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                 ),
               ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final phone = phoneCtrl.text.trim();
-                    if (phone.isEmpty) return;
-                    Navigator.pop(ctx, phone);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: EduColors.royalBlue,
-                    foregroundColor: Colors.white,
-                    overlayColor: EduColors.white.withValues(alpha: 0.1),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                  ),
-                  child: Text(
-                    'Pay Now',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: EduColors.textLight)),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
@@ -487,9 +575,14 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
 
       if (paymentOk) {
         // 3. Payment confirmed — _clickPesa.pollForPayment already credited Firestore
-        // Refresh from Firestore and update local state
-        await auth.refreshCredits();
+        // Refresh full user profile (credits + isAdmin status)
+        await auth.refreshUserProfile();
         sp.selectPlan(plan.title.toLowerCase());
+
+        // Institution plan: ask for institution name
+        if (plan.title.toLowerCase() == 'institution' && mounted) {
+          await _showInstitutionDialog(context, auth);
+        }
 
         if (mounted) {
           messenger.showSnackBar(
@@ -521,11 +614,110 @@ class _PurchasePackageScreenState extends State<PurchasePackageScreen> {
 
   String _friendlyPaymentError(String raw) {
     final lower = raw.toLowerCase();
-    if (lower.contains('network')) return 'Unable to connect. Please check your internet connection and try again.';
-    if (lower.contains('token') || lower.contains('auth')) return 'Payment service temporarily unavailable. Please try again later.';
+    if (lower.contains('network') || lower.contains('internet')) return 'Unable to connect. Please check your internet connection and try again.';
+    if (lower.contains('timed out')) return 'Connection timed out. Please check your internet and try again.';
+    if (lower.contains('authentication') || lower.contains('auth')) return raw;
+    if (lower.contains('payment service')) return raw;
     if (lower.contains('invalid phone') || lower.contains('phone')) return 'Please enter a valid phone number.';
     if (lower.contains('minimum')) return raw;
     return 'Something went wrong. Please try again.';
+  }
+
+  Future<void> _showInstitutionDialog(BuildContext context, AuthProvider auth) async {
+    final controller = TextEditingController();
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Institution Name',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: EduColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Enter your institution name. This will be used for your team invite codes.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: EduColors.textMedium,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                hintText: 'e.g. University of Dar es Salaam',
+                prefixIcon: const Icon(Icons.business_outlined, color: EduColors.royalBlue),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: EduColors.textLight),
+                    ),
+                    child: Text('Skip', style: GoogleFonts.poppins(color: EduColors.textMedium)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text('Save', style: GoogleFonts.poppins()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && context.mounted) {
+      try {
+        await auth.updateProfile(institutionName: result);
+      } catch (_) {}
+    }
+    controller.dispose();
   }
 
   Future<bool> _showPaymentWaitingDialog(

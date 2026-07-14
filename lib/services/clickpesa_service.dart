@@ -27,6 +27,9 @@ class ClickPesaService {
 
   // ── Get bearer token with retry ───────────────────────────────────────────
   Future<String> _getToken({int retries = 2}) async {
+    if (ApiConfig.clickPesaApiKey.isEmpty || ApiConfig.clickPesaClientId.isEmpty) {
+      throw Exception('Payment service not configured');
+    }
     for (int i = 0; i <= retries; i++) {
       try {
         final res = await _client.post(
@@ -84,6 +87,13 @@ class ClickPesaService {
     required String phone,
   }) async {
     try {
+      if (ApiConfig.clickPesaApiKey.isEmpty || ApiConfig.clickPesaClientId.isEmpty) {
+        return ClickPesaPaymentResult(
+          success: false,
+          error: 'Payment service not configured. Please contact support.',
+        );
+      }
+
       String p = phone.replaceAll(RegExp(r'\D'), '');
       if (p.length == 9 && p.startsWith('7')) {
         p = '255$p';
@@ -131,15 +141,18 @@ class ClickPesaService {
         message: 'Payment initiated. Check your phone for the USSD prompt.',
       );
     } on SocketException {
-      return ClickPesaPaymentResult(success: false, error: 'Network error');
+      return ClickPesaPaymentResult(success: false, error: 'Network error. Check your internet connection.');
     } on TimeoutException {
-      return ClickPesaPaymentResult(success: false, error: 'Connection timed out');
+      return ClickPesaPaymentResult(success: false, error: 'Connection timed out. Check your internet connection.');
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('token') || msg.contains('auth')) {
-        return ClickPesaPaymentResult(success: false, error: 'Authentication failed');
+        return ClickPesaPaymentResult(success: false, error: 'Payment service authentication failed. Please try again later.');
       }
-      return ClickPesaPaymentResult(success: false, error: 'Network error');
+      if (msg.contains('Unable to connect')) {
+        return ClickPesaPaymentResult(success: false, error: 'Unable to reach payment service. Please try again later.');
+      }
+      return ClickPesaPaymentResult(success: false, error: msg.replaceAll('Exception: ', ''));
     }
   }
 
@@ -186,6 +199,7 @@ class ClickPesaService {
       tx.update(userRef, {
         'credits': currentCredits + scans,
         'subscriptionPlan': planId,
+        'isAdmin': true,
         'lastPayment': {
           'orderReference': orderRef,
           'scans': scans,
