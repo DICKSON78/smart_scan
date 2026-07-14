@@ -23,6 +23,7 @@ class SubscriptionProvider with ChangeNotifier {
   List<TeacherAllocation> _teachers = [];
   bool _isLoading = false;
   String? _errorMessage;
+  String? _subscriptionExpiry;
 
   String get currentPlanId => _currentPlanId;
   String? get inviteCode => _inviteCode;
@@ -31,6 +32,7 @@ class SubscriptionProvider with ChangeNotifier {
   List<TeacherAllocation> get teachers => _teachers;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  String? get subscriptionExpiry => _subscriptionExpiry;
   int get teacherCount => _teachers.length;
   int get activeTeacherCount => _teachers.where((t) => t.isActive).length;
   bool get hasLowScanTeachers => _teachers.any((t) => t.isActive && t.isLowOnScans);
@@ -50,7 +52,7 @@ class SubscriptionProvider with ChangeNotifier {
       'Subject grouping', 'Invite teachers via code', 'Cloud backup', 'Dedicated support', 'Custom branding',
     ], isPopular: true),
     SubscriptionPlan(id: 'unlimited', name: 'Unlimited', price: 'Tshs 1,300,000', teacherCount: 200, features: [
-      '200,000 scans', 'Up to 200 devices', 'Bulk image processing', 'Advanced Excel formatting',
+      '500,000 scans', 'Up to 200 devices', 'Bulk image processing', 'Advanced Excel formatting',
       'Subject grouping', 'Invite teachers via code', 'Cloud backup', 'Dedicated support', 'Custom branding',
     ]),
   ];
@@ -71,6 +73,7 @@ class SubscriptionProvider with ChangeNotifier {
         _inviteCode = data['inviteCode'] as String?;
         _institutionName = data['institutionName'] as String? ?? '';
         _defaultInviteCredits = (data['defaultInviteCredits'] as int?) ?? 500;
+        _subscriptionExpiry = data['subscriptionExpiry'] as String?;
 
         final teachersData = data['teachers'] as List<dynamic>?;
         if (teachersData != null) {
@@ -134,20 +137,41 @@ class SubscriptionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void allocateScans(int index, int count) {
+  void allocateScans(int index, int additionalScans) async {
     if (index < 0 || index >= _teachers.length) return;
     final t = _teachers[index];
-    _teachers[index] = TeacherAllocation(email: t.email, name: t.name, allocatedScans: count);
+    _teachers[index] = TeacherAllocation(
+      uid: t.uid, email: t.email, name: t.name,
+      allocatedScans: t.allocatedScans + additionalScans,
+      usedScans: t.usedScans,
+      isActive: t.isActive,
+    );
     notifyListeners();
+    if (t.uid != null) {
+      try { await _api.allocateTeamMemberScans(t.uid!, additionalScans); } catch (_) {}
+    }
   }
 
-  void removeTeacher(int index) {
+  void removeTeacher(int index) async {
     if (index < 0 || index >= _teachers.length) return;
+    final t = _teachers[index];
     _teachers.removeAt(index);
     notifyListeners();
+    if (t.uid != null) {
+      try { await _api.removeTeamMember(t.uid!); } catch (_) {}
+    }
   }
 
-  void toggleTeacherActive(int index) {}
+  void toggleTeacherActive(int index) async {
+    if (index < 0 || index >= _teachers.length) return;
+    final t = _teachers[index];
+    final newActive = !t.isActive;
+    _teachers[index] = TeacherAllocation(email: t.email, name: t.name, allocatedScans: t.allocatedScans, usedScans: t.usedScans, isActive: newActive, uid: t.uid);
+    notifyListeners();
+    if (t.uid != null) {
+      try { await _api.toggleTeamMemberActive(t.uid!, newActive); } catch (_) {}
+    }
+  }
 
   Future<void> refresh() => _load();
 }

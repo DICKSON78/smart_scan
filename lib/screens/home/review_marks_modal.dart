@@ -29,7 +29,15 @@ class _ReviewMarksModalState extends State<ReviewMarksModal> {
   @override
   void initState() {
     super.initState();
-    _editableMarks = widget.marks
+    final seen = <String>{};
+    final deduped = <StudentMark>[];
+    for (final m in widget.marks) {
+      final reg = m.registrationNumber.trim();
+      if (reg.isEmpty || seen.add(reg)) {
+        deduped.add(m);
+      }
+    }
+    _editableMarks = deduped
         .map((m) => _EditableMark(
               registrationNumber: TextEditingController(text: m.registrationNumber),
               studentName: TextEditingController(text: m.studentName ?? ''),

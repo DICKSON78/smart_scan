@@ -17,6 +17,9 @@ class ApiService {
   Future<Map<String, dynamic>> deductCredits({int count = 1}) async {
     final uid = _uid;
     if (uid == null) throw Exception('Not logged in');
+    final doc = await _db.collection('users').doc(uid).get();
+    final current = (doc.data()?['credits'] as num?)?.toInt() ?? 0;
+    if (current < count) throw Exception('Insufficient credits');
     await _db.collection('users').doc(uid).update({
       'credits': FieldValue.increment(-count),
     });
@@ -29,10 +32,6 @@ class ApiService {
     final doc = await _db.collection('users').doc(uid).get();
     if (!doc.exists) throw Exception('User not found');
     final user = doc.data()!;
-    if (user['parentAdminId'] != null) {
-      final adminDoc = await _db.collection('users').doc(user['parentAdminId'] as String).get();
-      return {'success': true, 'credits': (adminDoc.data()?['credits'] as num?)?.toInt() ?? 0};
-    }
     return {'success': true, 'credits': (user['credits'] as num?)?.toInt() ?? 0};
   }
 
@@ -124,6 +123,20 @@ class ApiService {
     if (!userDoc.exists) throw Exception('User not found');
     final user = userDoc.data()!;
 
+    String effectivePlan(String plan, Map<String, dynamic> userData) {
+      if (plan == 'unlimited') {
+        final expiryStr = userData['subscriptionExpiry'] as String?;
+        if (expiryStr != null) {
+          final expiry = DateTime.tryParse(expiryStr);
+          if (expiry != null && DateTime.now().isAfter(expiry)) return 'basic';
+        }
+      }
+      return plan;
+    }
+
+    final planId = effectivePlan(user['subscriptionPlan'] ?? 'basic', user);
+    final expiryStr = user['subscriptionExpiry'] as String?;
+
     if (user['parentAdminId'] != null) {
       final adminDoc = await _db.collection('users').doc(user['parentAdminId'] as String).get();
       final admin = adminDoc.data()!;
@@ -136,24 +149,37 @@ class ApiService {
         .where('parentAdminId', isEqualTo: user['parentAdminId'])
         .get();
 
+      final adminPlan = effectivePlan(admin['subscriptionPlan'] ?? 'basic', admin);
+
       return {
         'success': true,
         'subscription': {
-          'planId': admin['subscriptionPlan'] ?? 'basic',
+          'planId': adminPlan,
+          'subscriptionExpiry': admin['subscriptionExpiry'],
           'inviteCode': invite?['code'],
           'institutionName': admin['institutionName'] ?? '',
           'defaultInviteCredits': 500,
           'teachers': teachersSnap.docs.map((d) {
             final t = d.data();
-            return {'email': t['email'], 'name': t['name'], 'credits': t['credits'], 'createdAt': 0};
+            final allocated = (t['allocatedScans'] as num?)?.toInt() ?? 0;
+            final credits = (t['credits'] as num?)?.toInt() ?? 0;
+            return {
+              'uid': d.id,
+              'email': t['email'],
+              'name': t['name'],
+              'allocatedScans': allocated,
+              'usedScans': allocated > 0 ? (allocated - credits).clamp(0, allocated) : 0,
+              'isActive': t['isActive'] ?? true,
+              'createdAt': 0,
+            };
           }).toList(),
         },
       };
     }
 
-    final teachersSnap = await _db.collection('users')
-      .where('parentAdminId', isEqualTo: uid)
-      .get();
+      final teachersSnap = await _db.collection('users')
+        .where('parentAdminId', isEqualTo: uid)
+        .get();
     final inviteSnap = await _db.collection('invite_codes')
       .where('adminId', isEqualTo: uid)
       .where('usedBy', isEqualTo: null)
@@ -164,13 +190,24 @@ class ApiService {
     return {
       'success': true,
       'subscription': {
-        'planId': user['subscriptionPlan'] ?? 'basic',
+        'planId': planId,
+        'subscriptionExpiry': expiryStr,
         'inviteCode': invite?['code'],
         'institutionName': user['institutionName'] ?? '',
         'defaultInviteCredits': 500,
         'teachers': teachersSnap.docs.map((d) {
           final t = d.data();
-          return {'email': t['email'], 'name': t['name'], 'credits': t['credits'], 'createdAt': 0};
+          final allocated = (t['allocatedScans'] as num?)?.toInt() ?? 0;
+          final credits = (t['credits'] as num?)?.toInt() ?? 0;
+          return {
+            'uid': d.id,
+            'email': t['email'],
+            'name': t['name'],
+            'allocatedScans': allocated,
+            'usedScans': allocated > 0 ? (allocated - credits).clamp(0, allocated) : 0,
+            'isActive': t['isActive'] ?? true,
+            'createdAt': 0,
+          };
         }).toList(),
       },
     };
@@ -242,6 +279,39 @@ class ApiService {
     if (doc.data()?['isAdmin'] != true) throw Exception('Only admins can add credits');
     await _db.collection('users').doc(uid).update({'credits': FieldValue.increment(count)});
     return {'success': true, 'creditsAdded': count};
+  }
+
+  Future<Map<String, dynamic>> allocateTeamMemberScans(String memberUid, int additionalScans) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final userDoc = await _db.collection('users').doc(uid).get();
+    if (userDoc.data()?['isAdmin'] != true) throw Exception('Only admins can allocate scans');
+    await _db.collection('users').doc(memberUid).update({
+      'allocatedScans': FieldValue.increment(additionalScans),
+      'credits': FieldValue.increment(additionalScans),
+    });
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> toggleTeamMemberActive(String memberUid, bool isActive) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final userDoc = await _db.collection('users').doc(uid).get();
+    if (userDoc.data()?['isAdmin'] != true) throw Exception('Only admins can toggle active');
+    await _db.collection('users').doc(memberUid).update({'isActive': isActive});
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> removeTeamMember(String memberUid) async {
+    final uid = _uid;
+    if (uid == null) throw Exception('Not logged in');
+    final userDoc = await _db.collection('users').doc(uid).get();
+    if (userDoc.data()?['isAdmin'] != true) throw Exception('Only admins can remove team members');
+    await _db.collection('users').doc(memberUid).update({
+      'parentAdminId': FieldValue.delete(),
+      'isActive': false,
+    });
+    return {'success': true};
   }
 
   Future<Map<String, dynamic>> getUserByEmail(String email) async {

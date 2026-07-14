@@ -71,10 +71,10 @@ const _plans = [
     title: 'Unlimited',
     price: 'Tshs 1,300,000',
     priceAmount: 1300000,
-    scans: '200,000 Scans',
+    scans: '500,000 Scans',
     devices: 'Up to 200 Devices',
     description: 'Large multi-faculty institutions',
-    scanAmount: 200000,
+    scanAmount: 500000,
   ),
 ];
 

@@ -245,7 +245,7 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => sp.generateInviteCode(),
+                      onPressed: () => sp.generateInviteCode(credits: sp.defaultInviteCredits),
                       icon: const Icon(Icons.refresh, size: 18),
                       label: Text('Regenerate', style: GoogleFonts.poppins(fontSize: 14)),
                     ),
@@ -549,22 +549,26 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
   }
 
   void _showAllocateLocalDialog(BuildContext context, SubscriptionProvider sp, int index, TeacherAllocation teacher) {
-    final ctrl = TextEditingController(text: teacher.allocatedScans > 0 ? teacher.allocatedScans.toString() : '30');
+    final ctrl = TextEditingController(text: '30');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Allocate Scans — ${teacher.name}', style: GoogleFonts.poppins()),
+        title: Text('Add Scans — ${teacher.name}', style: GoogleFonts.poppins()),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Set total scans for this teacher. Previous usage resets.',
+            if (teacher.allocatedScans > 0)
+              Text('Current: ${teacher.usedScans} used / ${teacher.allocatedScans} allocated (${teacher.remainingScans} remaining)',
+                  style: GoogleFonts.poppins(fontSize: 12, color: EduColors.textMedium)),
+            const SizedBox(height: 8),
+            Text('Enter additional scans to add to this teacher\'s balance.',
                 style: GoogleFonts.poppins(fontSize: 13, color: EduColors.textMedium)),
             const SizedBox(height: 16),
             TextField(
               controller: ctrl,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: 'Number of scans',
+                labelText: 'Additional scans',
                 prefixIcon: Icon(Icons.monetization_on, color: EduColors.royalBlue),
                 border: OutlineInputBorder(),
               ),
@@ -580,11 +584,11 @@ class _TeacherManagementScreenState extends State<TeacherManagementScreen> {
               sp.allocateScans(index, n);
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$n scans allocated to ${teacher.name}', style: GoogleFonts.poppins()),
+                SnackBar(content: Text('$n scans added to ${teacher.name}', style: GoogleFonts.poppins()),
                     backgroundColor: EduColors.success),
               );
             },
-            child: Text('Allocate', style: GoogleFonts.poppins()),
+            child: Text('Add Scans', style: GoogleFonts.poppins()),
           ),
         ],
       ),

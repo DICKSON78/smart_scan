@@ -11,7 +11,7 @@ const PLANS = {
   starter: {name: 'Starter', teacherCount: 2, scans: 1000, price: 'Tshs 25,000'},
   standard: {name: 'Standard', teacherCount: 5, scans: 5000, price: 'Tshs 100,000'},
   institution: {name: 'Institution', teacherCount: 100, scans: 50000, price: 'Tshs 800,000'},
-  unlimited: {name: 'Unlimited', teacherCount: 200, scans: 200000, price: 'Tshs 1,300,000'},
+  unlimited: {name: 'Unlimited', teacherCount: 200, scans: 500000, price: 'Tshs 1,300,000'},
 };
 
 // ─── Auth trigger: create user profile in Firestore ───

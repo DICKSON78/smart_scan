@@ -28,6 +28,7 @@ import '../../screens/settings/settings_screen.dart';
 import '../../screens/teacher/teacher_management_screen.dart';
 import '../../utils/theme.dart';
 import '../../utils/voice_parser.dart';
+import '../../widgets/error_dialog.dart';
 import '../../widgets/dialog_header.dart';
 import 'review_marks_modal.dart';
 import 'image_uploader.dart';
@@ -152,6 +153,52 @@ class _HomeTabContentState extends State<HomeTabContent> {
   void initState() {
     super.initState();
     _initSpeech();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSubscriptionAlerts());
+  }
+
+  bool _subscriptionAlertShown = false;
+
+  Future<void> _checkSubscriptionAlerts() async {
+    if (!mounted || _subscriptionAlertShown) return;
+    _subscriptionAlertShown = true;
+
+    final auth = context.read<AuthProvider>();
+    final sp = context.read<SubscriptionProvider>();
+    await sp.refresh();
+
+    if (!mounted) return;
+
+    final messages = <String>[];
+
+    if (sp.subscriptionExpiry != null) {
+      final expiry = DateTime.tryParse(sp.subscriptionExpiry!);
+      if (expiry != null) {
+        final daysLeft = expiry.difference(DateTime.now()).inDays;
+        if (daysLeft < 0) {
+          messages.add('Your ${sp.currentPlanId} subscription has expired. Please renew to continue.');
+        } else if (daysLeft <= 30) {
+          messages.add('Your subscription expires in $daysLeft days (${expiry.day}/${expiry.month}/${expiry.year}).');
+        }
+      }
+    }
+
+    if (sp.currentPlanId != 'unlimited' && auth.credits <= 50 && auth.credits > 0) {
+      messages.add('Only ${auth.credits} scans remaining. Purchase more to continue scanning.');
+    } else if (sp.currentPlanId != 'unlimited' && auth.credits <= 0) {
+      messages.add('No scans remaining. Purchase a package to continue.');
+    }
+
+    if (messages.isNotEmpty && mounted) {
+      showErrorDialog(
+        context,
+        ErrorDialogConfig(
+          title: 'Subscription Alert',
+          message: messages.join('\n\n'),
+          type: DialogType.warning,
+          actionLabel: 'OK',
+        ),
+      );
+    }
   }
 
   Future<void> _initSpeech() async {
@@ -190,8 +237,11 @@ class _HomeTabContentState extends State<HomeTabContent> {
     }
 
     if (authProvider.credits < 1) {
-      GoRouter.of(context).push('/purchase');
-      return;
+      final sp = context.read<SubscriptionProvider>();
+      if (sp.currentPlanId != 'unlimited') {
+        GoRouter.of(context).push('/purchase');
+        return;
+      }
     }
 
     setState(() => _isProcessing = true);
@@ -227,12 +277,33 @@ class _HomeTabContentState extends State<HomeTabContent> {
 
       if (confirmed != null && mounted) {
         final imageCount = _selectedImages.length;
-        sessionProvider.addMarksToSession(session.id, confirmed);
-        _saveMarksToDevice(confirmed, session);
-        await authProvider.deductCredits(imageCount);
-        _showSnack('${confirmed.length} marks saved to ${session.name}');
+        final existingRegs = session.marks.map((m) => m.registrationNumber).toSet();
+        final seenInBatch = <String>{};
+        final newMarks = <StudentMark>[];
+        for (final m in confirmed) {
+          final reg = m.registrationNumber;
+          if (existingRegs.contains(reg) || seenInBatch.contains(reg)) continue;
+          seenInBatch.add(reg);
+          newMarks.add(m);
+        }
+        final dupCount = confirmed.length - newMarks.length;
+        if (newMarks.isEmpty) {
+          _showSnack('All ${confirmed.length} students already scanned — nothing new added');
+        } else {
+          sessionProvider.addMarksToSession(session.id, newMarks);
+          _saveMarksToDevice(newMarks, session);
+          final sp = context.read<SubscriptionProvider>();
+          if (sp.currentPlanId != 'unlimited') {
+            await authProvider.deductCredits(imageCount);
+          }
+          if (dupCount > 0) {
+            _showSnack('${newMarks.length} saved, $dupCount duplicates skipped');
+          } else {
+            _showSnack('${newMarks.length} marks saved to ${session.name}');
+          }
+        }
         setState(() => _selectedImages.clear());
-        LoggerService.instance.logExtraction(subject, imageCount, confirmed.length);
+        LoggerService.instance.logExtraction(subject, imageCount, newMarks.length);
       }
     } catch (e) {
       if (mounted) {
@@ -845,6 +916,12 @@ class _HomeTabContentState extends State<HomeTabContent> {
     _speech!.stop();
     setState(() => _voiceIsRecording = false);
     if (_voiceTranscribedText.trim().isNotEmpty) {
+      final authProvider = context.read<AuthProvider>();
+      final sp = context.read<SubscriptionProvider>();
+      if (sp.currentPlanId != 'unlimited' && authProvider.credits < 1) {
+        GoRouter.of(context).push('/purchase');
+        return;
+      }
       _processVoiceText(_voiceTranscribedText);
     }
   }
@@ -852,6 +929,7 @@ class _HomeTabContentState extends State<HomeTabContent> {
   Future<void> _processVoiceText(String text) async {
     setState(() => _voiceIsProcessing = true);
     final sp = context.read<SessionProvider>();
+    final authProvider = context.read<AuthProvider>();
     final session = sp.activeSession;
     if (session == null) { setState(() => _voiceIsProcessing = false); return; }
 
@@ -903,12 +981,35 @@ class _HomeTabContentState extends State<HomeTabContent> {
         ))
         .toList();
       if (voiceMarks.isNotEmpty) {
-        sp.addMarksToSession(session.id, voiceMarks);
-      }
-      final updatedMarks = sp.getSessionById(session.id)?.marks ?? [];
-      if (updatedMarks.isNotEmpty) {
-        _saveMarksToDevice(updatedMarks, session);
-        _showSnack('${results.where((r) => r.success).length} marks saved to ${session.name}');
+        final freshSession = sp.getSessionById(session.id);
+        final existingRegs = (freshSession?.marks ?? session.marks).map((m) => m.registrationNumber).toSet();
+        final seenInBatch = <String>{};
+        final newMarks = <StudentMark>[];
+        for (final m in voiceMarks) {
+          final reg = m.registrationNumber;
+          if (existingRegs.contains(reg) || seenInBatch.contains(reg)) continue;
+          seenInBatch.add(reg);
+          newMarks.add(m);
+        }
+        final dupCount = voiceMarks.length - newMarks.length;
+        if (newMarks.isNotEmpty) {
+          sp.addMarksToSession(session.id, newMarks);
+          final sp2 = context.read<SubscriptionProvider>();
+          if (sp2.currentPlanId != 'unlimited') {
+            await authProvider.deductCredits(1);
+          }
+        }
+        final updatedMarks = sp.getSessionById(session.id)?.marks ?? [];
+        if (updatedMarks.isNotEmpty) {
+          _saveMarksToDevice(updatedMarks, session);
+        }
+        if (newMarks.isEmpty) {
+          _showSnack('All ${voiceMarks.length} students already scanned — nothing new added');
+        } else if (dupCount > 0) {
+          _showSnack('${newMarks.length} saved, $dupCount duplicates skipped');
+        } else {
+          _showSnack('${newMarks.length} marks saved to ${session.name}');
+        }
       }
     } catch (e) {
       setState(() => _voiceErrorMsg = 'Error processing voice: $e');
@@ -1282,31 +1383,37 @@ class _HomeTabContentState extends State<HomeTabContent> {
                       ),
                     ),
                     // Credits pill
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: EduColors.royalBlue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: EduColors.royalBlue.withValues(alpha: 0.25)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.account_balance_wallet,
-                              size: 13, color: EduColors.royalBlue),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${auth.credits}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: EduColors.royalBlue,
-                            ),
+                    Builder(
+                      builder: (context) {
+                        final sp = context.watch<SubscriptionProvider>();
+                        final isUnlimited = sp.currentPlanId == 'unlimited';
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: EduColors.royalBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: EduColors.royalBlue.withValues(alpha: 0.25)),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.account_balance_wallet,
+                                  size: 13, color: EduColors.royalBlue),
+                              const SizedBox(width: 4),
+                              Text(
+                                isUnlimited ? 'Unlimited' : '${auth.credits}',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: EduColors.royalBlue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

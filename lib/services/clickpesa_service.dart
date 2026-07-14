@@ -196,7 +196,7 @@ class ClickPesaService {
     await FirebaseFirestore.instance.runTransaction((tx) async {
       final userDoc = await tx.get(userRef);
       final currentCredits = (userDoc.data()?['credits'] as num?)?.toInt() ?? 0;
-      tx.update(userRef, {
+      final updateData = <String, dynamic>{
         'credits': currentCredits + scans,
         'subscriptionPlan': planId,
         'isAdmin': true,
@@ -206,7 +206,11 @@ class ClickPesaService {
           'planId': planId,
           'timestamp': DateTime.now().toIso8601String(),
         },
-      });
+      };
+      if (planId == 'unlimited') {
+        updateData['subscriptionExpiry'] = DateTime.now().add(const Duration(days: 365)).toIso8601String();
+      }
+      tx.update(userRef, updateData);
     });
 
     await docRef.update({'status': 'completed'});

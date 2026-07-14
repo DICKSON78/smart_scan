@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 class TeacherAllocation {
+  final String? uid;
   final String email;
   final String name;
   int allocatedScans;
@@ -11,6 +12,7 @@ class TeacherAllocation {
   DateTime addedAt;
 
   TeacherAllocation({
+    this.uid,
     required this.email,
     required this.name,
     this.allocatedScans = 0,
@@ -26,6 +28,7 @@ class TeacherAllocation {
   bool get isLowOnScans => allocatedScans > 0 && remainingScans <= (allocatedScans * 0.2).round();
 
   Map<String, dynamic> toJson() => {
+    'uid': uid,
     'email': email,
     'name': name,
     'allocatedScans': allocatedScans,
@@ -37,6 +40,7 @@ class TeacherAllocation {
   };
 
   factory TeacherAllocation.fromJson(Map<String, dynamic> json) => TeacherAllocation(
+    uid: json['uid'] as String?,
     email: json['email'] as String,
     name: json['name'] as String,
     allocatedScans: json['allocatedScans'] as int? ?? 0,
@@ -48,6 +52,7 @@ class TeacherAllocation {
   );
 
   TeacherAllocation copyWith({
+    String? uid,
     String? email,
     String? name,
     int? allocatedScans,
@@ -57,6 +62,7 @@ class TeacherAllocation {
     String? packageId,
     DateTime? addedAt,
   }) => TeacherAllocation(
+    uid: uid ?? this.uid,
     email: email ?? this.email,
     name: name ?? this.name,
     allocatedScans: allocatedScans ?? this.allocatedScans,
