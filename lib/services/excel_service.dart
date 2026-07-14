@@ -29,21 +29,19 @@ class ExcelService {
     sheet.setColumnWidth(3, 14);
 
     final colCount = 4;
+    final extractionType = marks.first.extractionType;
 
-    // ── Subject title row ──
-    sheet.appendRow([TextCellValue(subject)]);
+    // ── Subject + type title row ──
+    sheet.appendRow([TextCellValue('$subject - $extractionType')]);
     sheet.merge(
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0),
       CellIndex.indexByColumnRow(columnIndex: colCount - 1, rowIndex: 0),
     );
     _styleCell(sheet, 0, 0, bold: true, size: 13, color: _darkText, bg: _primaryLight);
 
-    // ── Empty row ──
-    sheet.appendRow([]);
-
     // ── Column headers ──
     final headers = ['S/No', 'Name', 'Registration No', 'Marks ($maxMark)'];
-    final headerRowIdx = 2;
+    final headerRowIdx = 1;
     sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
     for (int c = 0; c < colCount; c++) {
       _styleCell(sheet, headerRowIdx, c, bold: true, size: 11, color: _headerText, bg: _headerBg);
